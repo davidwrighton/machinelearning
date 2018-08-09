@@ -143,6 +143,26 @@ namespace Microsoft.ML.Runtime.Internal.Utilities
             return new VBuffer<T>(length, new T[length]);
         }
 
+        public interface IForEachDefinedVisitor<T>
+        {
+            void Visit(int index, T value);
+        }
+
+        private struct ForEachDefinedDelegateVisitor<T> : IForEachDefinedVisitor<T>
+        {
+            public ForEachDefinedDelegateVisitor(Action<int, T> visitor)
+            {
+                _visitor = visitor;
+            }
+
+            private readonly Action<int, T> _visitor;
+
+            public void Visit(int index, T value)
+            {
+                _visitor(index, value);
+            }
+        }
+
         /// <summary>
         /// Applies <paramref name="visitor"/> to every explicitly defined element of the vector,
         /// in order of index.
@@ -150,18 +170,61 @@ namespace Microsoft.ML.Runtime.Internal.Utilities
         public static void ForEachDefined<T>(ref VBuffer<T> a, Action<int, T> visitor)
         {
             Contracts.CheckValue(visitor, nameof(visitor));
+            ForEachDefined(ref a, new ForEachDefinedDelegateVisitor<T>(visitor));
+        }
+
+        /// <summary>
+        /// Applies <paramref name="visitor"/> to every explicitly defined element of the vector,
+        /// in order of index.
+        /// </summary>
+        public static void ForEachDefined<T, TVisitor>(ref VBuffer<T> a, TVisitor visitor) where TVisitor : struct, IForEachDefinedVisitor<T>
+        {
+            // Make local copies so jit can see the VBuffer fields aren't modified
+            VBuffer<T> local_a = a;
+
+            T[] data_a = local_a.Values;
 
             // REVIEW: This is analogous to an old Vector method, but is there
             // any real reason to have it given that we have the Items extension method?
-            if (a.IsDense)
+            if (local_a.IsDense)
             {
-                for (int i = 0; i < a.Length; i++)
-                    visitor(i, a.Values[i]);
+                if (local_a.Length > data_a.Length)
+                    throw new IndexOutOfRangeException();
+
+                for (int i = 0; i < local_a.Length; i++)
+                {
+                    visitor.Visit(i, a.Values[i]);
+                }
             }
             else
             {
-                for (int i = 0; i < a.Count; i++)
-                    visitor(a.Indices[i], a.Values[i]);
+                int[] indices_a = local_a.Indices;
+
+                if (local_a.Count > indices_a.Length)
+                    throw new IndexOutOfRangeException();
+
+                for (int i = 0; i < indices_a.Length && i < local_a.Count; i++)
+                    visitor.Visit(indices_a[i], data_a[i]);
+            }
+        }
+
+        public interface IForEachBothDefinedVisitor<T>
+        {
+            void Visit(int index, T value, T value2);
+        }
+
+        private struct ForEachBothDefinedDelegateVisitor<T> : IForEachBothDefinedVisitor<T>
+        {
+            public ForEachBothDefinedDelegateVisitor(Action<int, T, T> visitor)
+            {
+                _visitor = visitor;
+            }
+
+            private readonly Action<int, T, T> _visitor;
+
+            public void Visit(int index, T value, T value2)
+            {
+                _visitor(index, value, value2);
             }
         }
 
@@ -177,23 +240,38 @@ namespace Microsoft.ML.Runtime.Internal.Utilities
         /// This is passed the index, and two values</param>
         public static void ForEachBothDefined<T>(ref VBuffer<T> a, ref VBuffer<T> b, Action<int, T, T> visitor)
         {
-            Contracts.Check(a.Length == b.Length, "Vectors must have the same dimensionality.");
             Contracts.CheckValue(visitor, nameof(visitor));
+
+        }
+
+        /// <summary>
+        /// Applies the <paramref name="visitor "/>to each corresponding pair of elements
+        /// where the item is emplicitly defined in the vector. By explicitly defined,
+        /// we mean that for a given index <c>i</c>, both vectors have an entry in
+        /// <see cref="VBuffer{T}.Values"/> corresponding to that index.
+        /// </summary>
+        /// <param name="a">The first vector</param>
+        /// <param name="b">The second vector</param>
+        /// <param name="visitor">Operation to apply to each pair of non-zero values.
+        /// This is passed the index, and two values</param>
+        public static void ForEachBothDefined<T, TVisitor>(ref VBuffer<T> a, ref VBuffer<T> b, TVisitor visitor) where TVisitor : struct, IForEachBothDefinedVisitor<T>
+        {
+            Contracts.Check(a.Length == b.Length, "Vectors must have the same dimensionality.");
 
             if (a.IsDense && b.IsDense)
             {
                 for (int i = 0; i < a.Length; i++)
-                    visitor(i, a.Values[i], b.Values[i]);
+                    visitor.Visit(i, a.Values[i], b.Values[i]);
             }
             else if (b.IsDense)
             {
                 for (int i = 0; i < a.Count; i++)
-                    visitor(a.Indices[i], a.Values[i], b.Values[a.Indices[i]]);
+                    visitor.Visit(a.Indices[i], a.Values[i], b.Values[a.Indices[i]]);
             }
             else if (a.IsDense)
             {
                 for (int i = 0; i < b.Count; i++)
-                    visitor(b.Indices[i], a.Values[b.Indices[i]], b.Values[i]);
+                    visitor.Visit(b.Indices[i], a.Values[b.Indices[i]], b.Values[i]);
             }
             else
             {
@@ -205,7 +283,7 @@ namespace Microsoft.ML.Runtime.Internal.Utilities
                     int i = a.Indices[aI];
                     int j = b.Indices[bI];
                     if (i == j)
-                        visitor(i, a.Values[aI++], b.Values[bI++]);
+                        visitor.Visit(i, a.Values[aI++], b.Values[bI++]);
                     else if (i < j)
                         aI++;
                     else

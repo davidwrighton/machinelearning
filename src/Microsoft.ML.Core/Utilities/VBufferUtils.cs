@@ -742,6 +742,21 @@ namespace Microsoft.ML.Runtime.Internal.Utilities
             }
         }
 
+        interface IBoolValue
+        {
+            bool Value();
+        }
+
+        private struct BoolTrue : IBoolValue
+        {
+            public bool Value() => true;
+        }
+
+        private struct BoolFalse : IBoolValue
+        {
+            public bool Value() => false;
+        }
+
         /// <summary>
         /// Applies the <see cref="PairManipulator{TSrc,TDst}"/> to each pair of elements
         /// where <paramref name="src"/> is defined, in order of index. If there is
@@ -755,6 +770,25 @@ namespace Microsoft.ML.Runtime.Internal.Utilities
         /// <param name="dst">Argument vector, that could change</param>
         /// <param name="manip">Function to apply to each pair of elements</param>
         public static void ApplyWith<TSrc, TDst>(ref VBuffer<TSrc> src, ref VBuffer<TDst> dst, PairManipulator<TSrc, TDst> manip)
+        {
+            Contracts.CheckValue(manip, nameof(manip));
+            ApplyWithCore(ref src, ref dst, new PairDelegateManipulator<TSrc, TDst>(manip), outer: false);
+        }
+
+        /// <summary>
+        /// Applies the <see cref="PairManipulator{TSrc,TDst}"/> to each pair of elements
+        /// where <paramref name="src"/> is defined, in order of index. If there is
+        /// some value at an index in <paramref name="dst"/> that is not defined in
+        /// <paramref name="src"/>, that item remains without any further modification.
+        /// If either of the vectors are dense, the resulting <paramref name="dst"/>
+        /// will be dense. Otherwise, if both are sparse, the output will be sparse iff
+        /// there is any slot that is not explicitly represented in either vector.
+        /// </summary>
+        /// <param name="src">Argument vector, whose elements are only read</param>
+        /// <param name="dst">Argument vector, that could change</param>
+        /// <param name="manip">Function to apply to each pair of elements</param>
+        public static void ApplyWith<TSrc, TDst, TPairManipulator>(ref VBuffer<TSrc> src, ref VBuffer<TDst> dst, TPairManipulator manip) 
+            where TPairManipulator : struct, IPairManipulator<TSrc, TDst>
         {
             ApplyWithCore(ref src, ref dst, manip, outer: false);
         }
@@ -775,6 +809,27 @@ namespace Microsoft.ML.Runtime.Internal.Utilities
         /// <param name="manip">Function to apply to each pair of elements</param>
         public static void ApplyWithCopy<TSrc, TDst>(ref VBuffer<TSrc> src, ref VBuffer<TDst> dst, ref VBuffer<TDst> res, PairManipulatorCopy<TSrc, TDst> manip)
         {
+            Contracts.CheckValue(manip, nameof(manip));
+            ApplyWithCoreCopy(ref src, ref dst, ref res, new PairDelegateManipulatorCopy<TSrc, TDst>(manip), outer: false);
+        }
+
+        /// <summary>
+        /// Applies the <see cref="PairManipulator{TSrc,TDst}"/> to each pair of elements
+        /// where <paramref name="src"/> is defined, in order of index. It stores the result 
+        /// in another vector. If there is some value at an index in <paramref name="dst"/> 
+        /// that is not defined in <paramref name="src"/>, that slot value is copied to the 
+        /// corresponding slot in the result vector without any further modification.
+        /// If either of the vectors are dense, the resulting <paramref name="res"/>
+        /// will be dense. Otherwise, if both are sparse, the output will be sparse iff
+        /// there is any slot that is not explicitly represented in either vector.
+        /// </summary>
+        /// <param name="src">Argument vector, whose elements are only read</param>
+        /// <param name="dst">Argument vector, whose elements are only read</param>
+        /// <param name="res">Result vector</param>
+        /// <param name="manip">Function to apply to each pair of elements</param>
+        public static void ApplyWithCopy<TSrc, TDst, TPairManipulator>(ref VBuffer<TSrc> src, ref VBuffer<TDst> dst, ref VBuffer<TDst> res, TPairManipulator manip) 
+            where TPairManipulator : struct, IPairManipulatorCopy<TSrc, TDst>
+        {
             ApplyWithCoreCopy(ref src, ref dst, ref res, manip, outer: false);
         }
 
@@ -790,6 +845,24 @@ namespace Microsoft.ML.Runtime.Internal.Utilities
         /// <param name="dst">Argument vector, that could change</param>
         /// <param name="manip">Function to apply to each pair of elements</param>
         public static void ApplyWithEitherDefined<TSrc, TDst>(ref VBuffer<TSrc> src, ref VBuffer<TDst> dst, PairManipulator<TSrc, TDst> manip)
+        {
+            Contracts.CheckValue(manip, nameof(manip));
+            ApplyWithCore(ref src, ref dst, new PairDelegateManipulator<TSrc, TDst>(manip), outer: true);
+        }
+
+        /// <summary>
+        /// Applies the <see cref="PairManipulator{TSrc,TDst}"/> to each pair of elements
+        /// where either <paramref name="src"/> or <paramref name="dst"/>, has an element
+        /// defined at that index. If either of the vectors are dense, the resulting
+        /// <paramref name="dst"/> will be dense. Otherwise, if both are sparse, the output
+        /// will be sparse iff there is any slot that is not explicitly represented in
+        /// either vector.
+        /// </summary>
+        /// <param name="src">Argument vector, whose elements are only read</param>
+        /// <param name="dst">Argument vector, that could change</param>
+        /// <param name="manip">Function to apply to each pair of elements</param>
+        public static void ApplyWithEitherDefined<TSrc, TDst, TPairManipulator>(ref VBuffer<TSrc> src, ref VBuffer<TDst> dst, TPairManipulator manip) 
+            where TPairManipulator : struct, IPairManipulator<TSrc, TDst>
         {
             ApplyWithCore(ref src, ref dst, manip, outer: true);
         }
@@ -808,6 +881,25 @@ namespace Microsoft.ML.Runtime.Internal.Utilities
         /// <param name="manip">Function to apply to each pair of elements</param>
         public static void ApplyWithEitherDefinedCopy<TSrc, TDst>(ref VBuffer<TSrc> src, ref VBuffer<TDst> dst, ref VBuffer<TDst> res, PairManipulatorCopy<TSrc, TDst> manip)
         {
+            Contracts.CheckValue(manip, nameof(manip));
+            ApplyWithCoreCopy(ref src, ref dst, ref res, new PairDelegateManipulatorCopy<TSrc, TDst>(manip), outer: true);
+        }
+
+        /// <summary>
+        /// Applies the <see cref="PairManipulator{TSrc,TDst}"/> to each pair of elements
+        /// where either <paramref name="src"/> or <paramref name="dst"/>, has an element
+        /// defined at that index. It stores the result in another vector <paramref name="res"/>. 
+        /// If either of the vectors are dense, the resulting <paramref name="res"/>
+        /// will be dense. Otherwise, if both are sparse, the output will be sparse iff
+        /// there is any slot that is not explicitly represented in either vector.
+        /// </summary>
+        /// <param name="src">Argument vector, whose elements are only read</param>
+        /// <param name="dst">Argument vector, whose elements are only read</param>
+        /// <param name="res">Result vector</param>
+        /// <param name="manip">Function to apply to each pair of elements</param>
+        public static void ApplyWithEitherDefinedCopy<TSrc, TDst, TPairManipulator>(ref VBuffer<TSrc> src, ref VBuffer<TDst> dst, ref VBuffer<TDst> res, TPairManipulator manip) 
+            where TPairManipulator : struct, IPairManipulatorCopy<TSrc, TDst>
+        {
             ApplyWithCoreCopy(ref src, ref dst, ref res, manip, outer: true);
         }
 
@@ -817,10 +909,11 @@ namespace Microsoft.ML.Runtime.Internal.Utilities
         /// where necessary depending on whether this is an inner or outer join of the
         /// indices of <paramref name="src"/> on <paramref name="dst"/>.
         /// </summary>
-        private static void ApplyWithCore<TSrc, TDst>(ref VBuffer<TSrc> src, ref VBuffer<TDst> dst, PairManipulator<TSrc, TDst> manip, bool outer)
+        private static void ApplyWithCore<TSrc, TDst, TPairManipulator, TBoolValue>(ref VBuffer<TSrc> src, ref VBuffer<TDst> dst, TPairManipulator manip, TBoolValue outer) 
+            where TPairManipulator : struct, IPairManipulator<TSrc, TDst> 
+            where TBoolValue : struct, IBoolValue
         {
             Contracts.Check(src.Length == dst.Length, "Vectors must have the same dimensionality.");
-            Contracts.CheckValue(manip, nameof(manip));
 
             // We handle all of the permutations of the density/sparsity of src/dst through
             // special casing below. Each subcase in turn handles appropriately the treatment
@@ -856,12 +949,12 @@ namespace Microsoft.ML.Runtime.Internal.Utilities
                 if (dst.IsDense)
                 {
                     for (int i = 0; i < dst.Length; i++)
-                        manip(i, default(TSrc), ref dst.Values[i]);
+                        manip.Manipulate(i, default(TSrc), ref dst.Values[i]);
                 }
                 else
                 {
                     for (int i = 0; i < dst.Count; i++)
-                        manip(dst.Indices[i], default(TSrc), ref dst.Values[i]);
+                        manip.Manipulate(dst.Indices[i], default(TSrc), ref dst.Values[i]);
                 }
                 return;
             }
@@ -873,7 +966,7 @@ namespace Microsoft.ML.Runtime.Internal.Utilities
                     Densify(ref dst);
                 // Both are now dense. Both cases of outer are covered.
                 for (int i = 0; i < src.Length; i++)
-                    manip(i, src.Values[i], ref dst.Values[i]);
+                    manip.Manipulate(i, src.Values[i], ref dst.Values[i]);
                 return;
             }
 
@@ -888,17 +981,17 @@ namespace Microsoft.ML.Runtime.Internal.Utilities
                     {
                         if (i == sIndex)
                         {
-                            manip(i, src.Values[sI], ref dst.Values[i]);
+                            manip.Manipulate(i, src.Values[sI], ref dst.Values[i]);
                             sIndex = ++sI == src.Count ? src.Length : src.Indices[sI];
                         }
                         else
-                            manip(i, default(TSrc), ref dst.Values[i]);
+                            manip.Manipulate(i, default(TSrc), ref dst.Values[i]);
                     }
                 }
                 else
                 {
                     for (int i = 0; i < src.Count; i++)
-                        manip(src.Indices[i], src.Values[i], ref dst.Values[src.Indices[i]]);
+                        manip.Manipulate(src.Indices[i], src.Values[i], ref dst.Values[src.Indices[i]]);
                 }
                 return;
             }
@@ -913,7 +1006,7 @@ namespace Microsoft.ML.Runtime.Internal.Utilities
                 Array.Clear(values, 0, src.Count);
                 Utils.EnsureSize(ref indices, src.Count, src.Length);
                 for (int i = 0; i < src.Count; i++)
-                    manip(indices[i] = src.Indices[i], src.Values[i], ref values[i]);
+                    manip.Manipulate(indices[i] = src.Indices[i], src.Values[i], ref values[i]);
                 dst = new VBuffer<TDst>(src.Length, src.Count, values, indices);
                 return;
             }
@@ -983,14 +1076,14 @@ namespace Microsoft.ML.Runtime.Internal.Utilities
                         indices[i] = dIndex;
                         values[i] = dst.Values[dI];
                         if (outer)
-                            manip(dIndex, default(TSrc), ref values[i]);
+                            manip.Manipulate(dIndex, default(TSrc), ref values[i]);
                         dIndex = --dI >= 0 ? dst.Indices[dI] : -1;
                     }
                     else if (sIndex > dIndex)
                     {
                         indices[i] = sIndex;
                         values[i] = default(TDst);
-                        manip(sIndex, src.Values[sI], ref values[i]);
+                        manip.Manipulate(sIndex, src.Values[sI], ref values[i]);
                         sIndex = --sI >= 0 ? src.Indices[sI] : -1;
                     }
                     else
@@ -1000,7 +1093,7 @@ namespace Microsoft.ML.Runtime.Internal.Utilities
                         Contracts.Assert(sIndex == dIndex);
                         indices[i] = dIndex;
                         values[i] = dst.Values[dI];
-                        manip(sIndex, src.Values[sI], ref values[i]);
+                        manip.Manipulate(sIndex, src.Values[sI], ref values[i]);
                         sIndex = --sI >= 0 ? src.Indices[sI] : -1;
                         dIndex = --dI >= 0 ? dst.Indices[dI] : -1;
                     }
@@ -1018,7 +1111,7 @@ namespace Microsoft.ML.Runtime.Internal.Utilities
                     for (int i = 0; i < src.Count; i++)
                     {
                         Contracts.Assert(src.Indices[i] == dst.Indices[i]);
-                        manip(src.Indices[i], src.Values[i], ref dst.Values[i]);
+                        manip.Manipulate(src.Indices[i], src.Values[i], ref dst.Values[i]);
                     }
                     return;
                 }
@@ -1033,11 +1126,11 @@ namespace Microsoft.ML.Runtime.Internal.Utilities
                     {
                         if (dst.Indices[i] == sIndex)
                         {
-                            manip(sIndex, src.Values[sI], ref dst.Values[i]);
+                            manip.Manipulate(sIndex, src.Values[sI], ref dst.Values[i]);
                             sIndex = ++sI == src.Count ? src.Length : src.Indices[sI];
                         }
                         else
-                            manip(dst.Indices[i], default(TSrc), ref dst.Values[i]);
+                            manip.Manipulate(dst.Indices[i], default(TSrc), ref dst.Values[i]);
                     }
                 }
                 else
@@ -1048,7 +1141,7 @@ namespace Microsoft.ML.Runtime.Internal.Utilities
                         while (dst.Indices[dI] < sIndex)
                             dI++;
                         Contracts.Assert(dst.Indices[dI] == sIndex);
-                        manip(sIndex, src.Values[sI], ref dst.Values[dI++]);
+                        manip.Manipulate(sIndex, src.Values[sI], ref dst.Values[dI++]);
                     }
                 }
                 return;
@@ -1076,7 +1169,7 @@ namespace Microsoft.ML.Runtime.Internal.Utilities
                 Array.Copy(src.Indices, indices, newCount);
                 dst = new VBuffer<TDst>(src.Length, newCount, dst.Values, indices);
                 for (sI = 0; sI < src.Count; sI++)
-                    manip(src.Indices[sI], src.Values[sI], ref dst.Values[sI]);
+                    manip.Manipulate(src.Indices[sI], src.Values[sI], ref dst.Values[sI]);
                 return;
             }
 
@@ -1089,10 +1182,11 @@ namespace Microsoft.ML.Runtime.Internal.Utilities
         /// where necessary depending on whether this is an inner or outer join of the
         /// indices of <paramref name="src"/> on <paramref name="dst"/>.
         /// </summary>
-        private static void ApplyWithCoreCopy<TSrc, TDst>(ref VBuffer<TSrc> src, ref VBuffer<TDst> dst, ref VBuffer<TDst> res, PairManipulatorCopy<TSrc, TDst> manip, bool outer)
+        private static void ApplyWithCoreCopy<TSrc, TDst, TPairManipulator, TBoolValue>(ref VBuffer<TSrc> src, ref VBuffer<TDst> dst, ref VBuffer<TDst> res, TPairManipulator manip, bool outer) 
+            where TPairManipulator : struct, IPairManipulatorCopy<TSrc, TDst>
+            where TBoolValue : struct, IBoolValue
         {
             Contracts.Check(src.Length == dst.Length, "Vectors must have the same dimensionality.");
-            Contracts.CheckValue(manip, nameof(manip));
             Contracts.Assert(Utils.Size(src.Values) >= src.Count);
             Contracts.Assert(Utils.Size(dst.Values) >= dst.Count);
             int length = src.Length;
@@ -1106,7 +1200,7 @@ namespace Microsoft.ML.Runtime.Internal.Utilities
                     Contracts.Assert(src.Count == src.Length);
                     TDst[] resValues = Utils.Size(res.Values) >= length ? res.Values : new TDst[length];
                     for (int i = 0; i < length; i++)
-                        manip(i, src.Values[i], default(TDst), ref resValues[i]);
+                        manip.Manipulate(i, src.Values[i], default(TDst), ref resValues[i]);
                     res = new VBuffer<TDst>(length, resValues, res.Indices);
                 }
                 else
@@ -1121,7 +1215,7 @@ namespace Microsoft.ML.Runtime.Internal.Utilities
                     {
                         int i = src.Indices[ii];
                         resIndices[ii] = i;
-                        manip(i, src.Values[ii], default(TDst), ref resValues[ii]);
+                        manip.Manipulate(i, src.Values[ii], default(TDst), ref resValues[ii]);
                     }
                     res = new VBuffer<TDst>(length, count, resValues, resIndices);
                 }
@@ -1135,7 +1229,7 @@ namespace Microsoft.ML.Runtime.Internal.Utilities
                     {
                         // Apply manip to all slots, as all slots of dst are defined.
                         for (int j = 0; j < length; j++)
-                            manip(j, default(TSrc), dst.Values[j], ref resValues[j]);
+                            manip.Manipulate(j, default(TSrc), dst.Values[j], ref resValues[j]);
                     }
                     else
                     {
@@ -1149,7 +1243,7 @@ namespace Microsoft.ML.Runtime.Internal.Utilities
                 {
                     Contracts.Assert(src.Count == src.Length);
                     for (int i = 0; i < length; i++)
-                        manip(i, src.Values[i], dst.Values[i], ref resValues[i]);
+                        manip.Manipulate(i, src.Values[i], dst.Values[i], ref resValues[i]);
                     res = new VBuffer<TDst>(length, resValues, res.Indices);
                 }
                 else
@@ -1167,11 +1261,11 @@ namespace Microsoft.ML.Runtime.Internal.Utilities
                         {
                             if (j == i)
                             {
-                                manip(j, src.Values[ii], dst.Values[j], ref resValues[j]);
+                                manip.Manipulate(j, src.Values[ii], dst.Values[j], ref resValues[j]);
                                 i = ++ii == count ? length : src.Indices[ii];
                             }
                             else
-                                manip(j, default(TSrc), dst.Values[j], ref resValues[j]);
+                                manip.Manipulate(j, default(TSrc), dst.Values[j], ref resValues[j]);
                         }
                     }
                     else
@@ -1181,7 +1275,7 @@ namespace Microsoft.ML.Runtime.Internal.Utilities
                         {
                             if (j == i)
                             {
-                                manip(j, src.Values[ii], dst.Values[j], ref resValues[j]);
+                                manip.Manipulate(j, src.Values[ii], dst.Values[j], ref resValues[j]);
                                 i = ++ii == count ? length : src.Indices[ii];
                             }
                             else
@@ -1206,7 +1300,7 @@ namespace Microsoft.ML.Runtime.Internal.Utilities
                         {
                             int j = dst.Indices[jj];
                             resIndices[jj] = j;
-                            manip(j, default(TSrc), dst.Values[jj], ref resValues[jj]);
+                            manip.Manipulate(j, default(TSrc), dst.Values[jj], ref resValues[jj]);
                         }
                     }
                     else
@@ -1229,11 +1323,11 @@ namespace Microsoft.ML.Runtime.Internal.Utilities
                     {
                         if (i == j)
                         {
-                            manip(i, src.Values[i], dst.Values[jj], ref resValues[i]);
+                            manip.Manipulate(i, src.Values[i], dst.Values[jj], ref resValues[i]);
                             j = ++jj == dstCount ? length : dst.Indices[jj];
                         }
                         else
-                            manip(i, src.Values[i], default(TDst), ref resValues[i]);
+                            manip.Manipulate(i, src.Values[i], default(TDst), ref resValues[i]);
                     }
                     res = new VBuffer<TDst>(length, resValues, res.Indices);
                 }
@@ -1290,7 +1384,7 @@ namespace Microsoft.ML.Runtime.Internal.Utilities
                             {
                                 // Slot (i == j) both defined in src and dst. Apply manip.
                                 resIndices[kk] = i;
-                                manip(i, src.Values[ii], dst.Values[jj], ref resValues[kk]);
+                                manip.Manipulate(i, src.Values[ii], dst.Values[jj], ref resValues[kk]);
                                 i = ++ii == src.Count ? length : src.Indices[ii];
                                 j = ++jj == dstCount ? length : dst.Indices[jj];
                             }
@@ -1298,7 +1392,7 @@ namespace Microsoft.ML.Runtime.Internal.Utilities
                             {
                                 // Slot i defined only in src, but not in dst. Apply manip.
                                 resIndices[kk] = i;
-                                manip(i, src.Values[ii], default(TDst), ref resValues[kk]);
+                                manip.Manipulate(i, src.Values[ii], default(TDst), ref resValues[kk]);
                                 i = ++ii == src.Count ? length : src.Indices[ii];
                             }
                             else
@@ -1308,7 +1402,7 @@ namespace Microsoft.ML.Runtime.Internal.Utilities
                                 resIndices[kk] = j;
                                 // REVIEW: Should we move checking of outer outside the loop?
                                 if (outer)
-                                    manip(j, default(TSrc), dst.Values[jj], ref resValues[kk]);
+                                    manip.Manipulate(j, default(TSrc), dst.Values[jj], ref resValues[kk]);
                                 else
                                     resValues[kk] = dst.Values[jj];
                                 j = ++jj == dstCount ? length : dst.Indices[jj];

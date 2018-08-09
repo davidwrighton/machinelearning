@@ -208,14 +208,14 @@ namespace Microsoft.ML.Runtime.Internal.Utilities
             }
         }
 
-        public interface IForEachBothDefinedVisitor<T>
+        public interface IForEachPairVisitor<T>
         {
             void Visit(int index, T value, T value2);
         }
 
-        private struct ForEachBothDefinedDelegateVisitor<T> : IForEachBothDefinedVisitor<T>
+        private struct ForEachPairDelegateVisitor<T> : IForEachPairVisitor<T>
         {
-            public ForEachBothDefinedDelegateVisitor(Action<int, T, T> visitor)
+            public ForEachPairDelegateVisitor(Action<int, T, T> visitor)
             {
                 _visitor = visitor;
             }
@@ -241,7 +241,7 @@ namespace Microsoft.ML.Runtime.Internal.Utilities
         public static void ForEachBothDefined<T>(ref VBuffer<T> a, ref VBuffer<T> b, Action<int, T, T> visitor)
         {
             Contracts.CheckValue(visitor, nameof(visitor));
-
+            ForEachBothDefined(ref a, ref b, new ForEachPairDelegateVisitor<T>(visitor));
         }
 
         /// <summary>
@@ -254,24 +254,33 @@ namespace Microsoft.ML.Runtime.Internal.Utilities
         /// <param name="b">The second vector</param>
         /// <param name="visitor">Operation to apply to each pair of non-zero values.
         /// This is passed the index, and two values</param>
-        public static void ForEachBothDefined<T, TVisitor>(ref VBuffer<T> a, ref VBuffer<T> b, TVisitor visitor) where TVisitor : struct, IForEachBothDefinedVisitor<T>
+        public static void ForEachBothDefined<T, TVisitor>(ref VBuffer<T> a, ref VBuffer<T> b, TVisitor visitor) where TVisitor : struct, IForEachPairVisitor<T>
         {
+            // Make local copies so jit can see the VBuffer fields aren't modified
+            VBuffer<T> local_a = a;
+            VBuffer<T> local_b = b;
+
+            T[] data_a = local_a.Values;
+            T[] data_b = local_b.Values;
+
             Contracts.Check(a.Length == b.Length, "Vectors must have the same dimensionality.");
 
             if (a.IsDense && b.IsDense)
             {
                 for (int i = 0; i < a.Length; i++)
-                    visitor.Visit(i, a.Values[i], b.Values[i]);
+                    visitor.Visit(i, data_a[i], data_b[i]);
             }
             else if (b.IsDense)
             {
+                int[] indices_a = a.Indices;
                 for (int i = 0; i < a.Count; i++)
-                    visitor.Visit(a.Indices[i], a.Values[i], b.Values[a.Indices[i]]);
+                    visitor.Visit(indices_a[i], data_a[i], data_b[indices_a[i]]);
             }
             else if (a.IsDense)
             {
+                int[] indices_b = b.Indices;
                 for (int i = 0; i < b.Count; i++)
-                    visitor.Visit(b.Indices[i], a.Values[b.Indices[i]], b.Values[i]);
+                    visitor.Visit(indices_b[i], data_a[indices_b[i]], data_b[i]);
             }
             else
             {
@@ -283,7 +292,7 @@ namespace Microsoft.ML.Runtime.Internal.Utilities
                     int i = a.Indices[aI];
                     int j = b.Indices[bI];
                     if (i == j)
-                        visitor.Visit(i, a.Values[aI++], b.Values[bI++]);
+                        visitor.Visit(i, data_a[aI++], data_b[bI++]);
                     else if (i < j)
                         aI++;
                     else
@@ -388,12 +397,53 @@ namespace Microsoft.ML.Runtime.Internal.Utilities
         /// <param name="value">Value to change</param>
         public delegate void SlotValueManipulator<T>(int slot, ref T value);
 
+        public interface ISlotValueManipulator<T>
+        {
+            void Manipulate(int slot, ref T value);
+        }
+
+        public struct SlotValueDelegateManipulator<T> : ISlotValueManipulator<T>
+        {
+            SlotValueManipulator<T> _manip;
+
+            public SlotValueDelegateManipulator(SlotValueManipulator<T> manip)
+            {
+                _manip = manip;
+            }
+
+            public void Manipulate(int slot, ref T value)
+            {
+                _manip(slot, ref value);
+            }
+        }
+
         /// <summary>
         /// A predicate on some sort of value.
         /// </summary>
         /// <param name="src">The value to test</param>
         /// <returns>The result of some sort of test from that value</returns>
         public delegate bool ValuePredicate<T>(ref T src);
+
+        public interface IValuePredicate<T>
+        {
+            bool Predicate(ref T src);
+        }
+
+        public struct ValueDelegatePredicate<T> : IValuePredicate<T>
+        {
+            ValuePredicate<T> _pred;
+
+            public ValueDelegatePredicate(ValuePredicate<T> pred)
+            {
+                _pred = pred;
+            }
+
+            public bool Predicate(ref T value)
+            {
+                return _pred(ref value);
+            }
+        }
+
 
         /// <summary>
         /// Applies the <paramref name="manip"/> to every explicitly defined
@@ -402,16 +452,29 @@ namespace Microsoft.ML.Runtime.Internal.Utilities
         public static void Apply<T>(ref VBuffer<T> dst, SlotValueManipulator<T> manip)
         {
             Contracts.CheckValue(manip, nameof(manip));
+            Apply(ref dst, new SlotValueDelegateManipulator<T>(manip));
+        }
 
-            if (dst.IsDense)
+        /// <summary>
+        /// Applies the <paramref name="manip"/> to every explicitly defined
+        /// element of the vector.
+        /// </summary>
+        public static void Apply<T, TManip>(ref VBuffer<T> dst, TManip manip) where TManip:struct, ISlotValueManipulator<T>
+        {
+            VBuffer<T> local_dst = dst;
+
+            T[] data_dst = local_dst.Values;
+
+            if (local_dst.IsDense)
             {
-                for (int i = 0; i < dst.Length; i++)
-                    manip(i, ref dst.Values[i]);
+                for (int i = 0; i < local_dst.Length; i++)
+                    manip.Manipulate(i, ref data_dst[i]);
             }
             else
             {
-                for (int i = 0; i < dst.Count; i++)
-                    manip(dst.Indices[i], ref dst.Values[i]);
+                int[] indices_dst = local_dst.Indices;
+                for (int i = 0; i < local_dst.Count; i++)
+                    manip.Manipulate(indices_dst[i], ref data_dst[i]);
             }
         }
 

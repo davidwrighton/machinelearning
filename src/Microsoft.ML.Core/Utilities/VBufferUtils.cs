@@ -692,6 +692,26 @@ namespace Microsoft.ML.Runtime.Internal.Utilities
         /// <param name="dst">Value from second vector, which may be manipulated.</param>
         public delegate void PairManipulator<TSrc, TDst>(int slot, TSrc src, ref TDst dst);
 
+        public interface IPairManipulator<TSrc, TDst>
+        {
+            void Manipulate(int slot, TSrc src, ref TDst dst);
+        }
+
+        struct PairDelegateManipulator<TSrc, TDst> : IPairManipulator<TSrc, TDst>
+        {
+            PairManipulator<TSrc, TDst> _manip;
+
+            public PairDelegateManipulator(PairManipulator<TSrc, TDst> manip)
+            {
+                _manip = manip;
+            }
+
+            public void Manipulate(int slot, TSrc src, ref TDst dst)
+            {
+                _manip(slot, src, ref dst);
+            }
+        }
+
         /// <summary>
         /// A delegate for functions that access an index and two corresponding
         /// values, stores the result in another vector.
@@ -701,6 +721,26 @@ namespace Microsoft.ML.Runtime.Internal.Utilities
         /// <param name="dst">Value from second vector.</param>
         /// <param name="res">The value to store the result.</param>
         public delegate void PairManipulatorCopy<TSrc, TDst>(int slot, TSrc src, TDst dst, ref TDst res);
+
+        public interface IPairManipulatorCopy<TSrc, TDst>
+        {
+            void Manipulate(int slot, TSrc src, TDst dst, ref TDst res);
+        }
+
+        struct PairDelegateManipulatorCopy<TSrc, TDst> : IPairManipulatorCopy<TSrc, TDst>
+        {
+            PairManipulatorCopy<TSrc, TDst> _manip;
+
+            public PairDelegateManipulatorCopy(PairManipulatorCopy<TSrc, TDst> manip)
+            {
+                _manip = manip;
+            }
+
+            public void Manipulate(int slot, TSrc src, TDst dst, ref TDst res)
+            {
+                _manip(slot, src, dst, ref res);
+            }
+        }
 
         /// <summary>
         /// Applies the <see cref="PairManipulator{TSrc,TDst}"/> to each pair of elements

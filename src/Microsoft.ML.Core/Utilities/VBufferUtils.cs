@@ -744,17 +744,17 @@ namespace Microsoft.ML.Runtime.Internal.Utilities
 
         interface IBoolValue
         {
-            bool Value();
+            bool Value {get;}
         }
 
         private struct BoolTrue : IBoolValue
         {
-            public bool Value() => true;
+            public bool Value => true;
         }
 
         private struct BoolFalse : IBoolValue
         {
-            public bool Value() => false;
+            public bool Value => false;
         }
 
         /// <summary>
@@ -772,7 +772,7 @@ namespace Microsoft.ML.Runtime.Internal.Utilities
         public static void ApplyWith<TSrc, TDst>(ref VBuffer<TSrc> src, ref VBuffer<TDst> dst, PairManipulator<TSrc, TDst> manip)
         {
             Contracts.CheckValue(manip, nameof(manip));
-            ApplyWithCore(ref src, ref dst, new PairDelegateManipulator<TSrc, TDst>(manip), outer: false);
+            ApplyWithCore(ref src, ref dst, new PairDelegateManipulator<TSrc, TDst>(manip), outer: new BoolFalse());
         }
 
         /// <summary>
@@ -790,7 +790,7 @@ namespace Microsoft.ML.Runtime.Internal.Utilities
         public static void ApplyWith<TSrc, TDst, TPairManipulator>(ref VBuffer<TSrc> src, ref VBuffer<TDst> dst, TPairManipulator manip) 
             where TPairManipulator : struct, IPairManipulator<TSrc, TDst>
         {
-            ApplyWithCore(ref src, ref dst, manip, outer: false);
+            ApplyWithCore(ref src, ref dst, manip, outer: new BoolFalse());
         }
 
         /// <summary>
@@ -810,7 +810,7 @@ namespace Microsoft.ML.Runtime.Internal.Utilities
         public static void ApplyWithCopy<TSrc, TDst>(ref VBuffer<TSrc> src, ref VBuffer<TDst> dst, ref VBuffer<TDst> res, PairManipulatorCopy<TSrc, TDst> manip)
         {
             Contracts.CheckValue(manip, nameof(manip));
-            ApplyWithCoreCopy(ref src, ref dst, ref res, new PairDelegateManipulatorCopy<TSrc, TDst>(manip), outer: false);
+            ApplyWithCoreCopy(ref src, ref dst, ref res, new PairDelegateManipulatorCopy<TSrc, TDst>(manip), outer: new BoolFalse());
         }
 
         /// <summary>
@@ -830,7 +830,7 @@ namespace Microsoft.ML.Runtime.Internal.Utilities
         public static void ApplyWithCopy<TSrc, TDst, TPairManipulator>(ref VBuffer<TSrc> src, ref VBuffer<TDst> dst, ref VBuffer<TDst> res, TPairManipulator manip) 
             where TPairManipulator : struct, IPairManipulatorCopy<TSrc, TDst>
         {
-            ApplyWithCoreCopy(ref src, ref dst, ref res, manip, outer: false);
+            ApplyWithCoreCopy(ref src, ref dst, ref res, manip, outer: new BoolFalse());
         }
 
         /// <summary>
@@ -847,7 +847,7 @@ namespace Microsoft.ML.Runtime.Internal.Utilities
         public static void ApplyWithEitherDefined<TSrc, TDst>(ref VBuffer<TSrc> src, ref VBuffer<TDst> dst, PairManipulator<TSrc, TDst> manip)
         {
             Contracts.CheckValue(manip, nameof(manip));
-            ApplyWithCore(ref src, ref dst, new PairDelegateManipulator<TSrc, TDst>(manip), outer: true);
+            ApplyWithCore(ref src, ref dst, new PairDelegateManipulator<TSrc, TDst>(manip), outer: new BoolTrue());
         }
 
         /// <summary>
@@ -864,7 +864,7 @@ namespace Microsoft.ML.Runtime.Internal.Utilities
         public static void ApplyWithEitherDefined<TSrc, TDst, TPairManipulator>(ref VBuffer<TSrc> src, ref VBuffer<TDst> dst, TPairManipulator manip) 
             where TPairManipulator : struct, IPairManipulator<TSrc, TDst>
         {
-            ApplyWithCore(ref src, ref dst, manip, outer: true);
+            ApplyWithCore(ref src, ref dst, manip, outer: new BoolTrue());
         }
 
         /// <summary>
@@ -882,7 +882,7 @@ namespace Microsoft.ML.Runtime.Internal.Utilities
         public static void ApplyWithEitherDefinedCopy<TSrc, TDst>(ref VBuffer<TSrc> src, ref VBuffer<TDst> dst, ref VBuffer<TDst> res, PairManipulatorCopy<TSrc, TDst> manip)
         {
             Contracts.CheckValue(manip, nameof(manip));
-            ApplyWithCoreCopy(ref src, ref dst, ref res, new PairDelegateManipulatorCopy<TSrc, TDst>(manip), outer: true);
+            ApplyWithCoreCopy(ref src, ref dst, ref res, new PairDelegateManipulatorCopy<TSrc, TDst>(manip), outer: new BoolTrue());
         }
 
         /// <summary>
@@ -900,14 +900,17 @@ namespace Microsoft.ML.Runtime.Internal.Utilities
         public static void ApplyWithEitherDefinedCopy<TSrc, TDst, TPairManipulator>(ref VBuffer<TSrc> src, ref VBuffer<TDst> dst, ref VBuffer<TDst> res, TPairManipulator manip) 
             where TPairManipulator : struct, IPairManipulatorCopy<TSrc, TDst>
         {
-            ApplyWithCoreCopy(ref src, ref dst, ref res, manip, outer: true);
+            ApplyWithCoreCopy(ref src, ref dst, ref res, manip, outer: new BoolTrue());
         }
 
         /// <summary>
-        /// The actual implementation of <see cref="ApplyWith"/> and
-        /// <see cref="ApplyWithEitherDefined{TSrc,TDst}"/>, that has internal branches on the implementation
-        /// where necessary depending on whether this is an inner or outer join of the
-        /// indices of <paramref name="src"/> on <paramref name="dst"/>.
+        /// The actual implementation of <see cref="VBufferUtils.ApplyWith{TSrc, TDst}"/>,
+        /// <see cref="VBufferUtils.ApplyWith{TSrc, TDst, TPairManipulator}"/>,
+        /// <see cref="ApplyWithEitherDefined{TSrc,TDst}"/> and
+        /// <see cref="ApplyWithEitherDefined{TSrc,TDst, TPairManipulator}"/>, that has 
+        /// internal branches on the implementation where necessary depending on whether 
+        /// this is an inner or outer join of the indices of <paramref name="src"/> on 
+        /// <paramref name="dst"/>.
         /// </summary>
         private static void ApplyWithCore<TSrc, TDst, TPairManipulator, TBoolValue>(ref VBuffer<TSrc> src, ref VBuffer<TDst> dst, TPairManipulator manip, TBoolValue outer) 
             where TPairManipulator : struct, IPairManipulator<TSrc, TDst> 
@@ -944,7 +947,7 @@ namespace Microsoft.ML.Runtime.Internal.Utilities
             if (src.Count == 0)
             {
                 // Major case 1, with src.Count == 0.
-                if (!outer)
+                if (!outer.Value)
                     return;
                 if (dst.IsDense)
                 {
@@ -973,7 +976,7 @@ namespace Microsoft.ML.Runtime.Internal.Utilities
             if (dst.IsDense)
             {
                 // Major case 3, with dst.Dense. Note that !a.Dense.
-                if (outer)
+                if (outer.Value)
                 {
                     int sI = 0;
                     int sIndex = src.Indices[sI];
@@ -1075,7 +1078,7 @@ namespace Microsoft.ML.Runtime.Internal.Utilities
                     {
                         indices[i] = dIndex;
                         values[i] = dst.Values[dI];
-                        if (outer)
+                        if (outer.Value)
                             manip.Manipulate(dIndex, default(TSrc), ref values[i]);
                         dIndex = --dI >= 0 ? dst.Indices[dI] : -1;
                     }
@@ -1118,7 +1121,7 @@ namespace Microsoft.ML.Runtime.Internal.Utilities
                 // Major case 8, the indices of src must be a subset of dst's indices.
                 Contracts.Assert(newCount > src.Count);
                 dI = 0;
-                if (outer)
+                if (outer.Value)
                 {
                     int sI = 0;
                     int sIndex = src.Indices[sI];
@@ -1177,12 +1180,14 @@ namespace Microsoft.ML.Runtime.Internal.Utilities
         }
 
         /// <summary>
-        /// The actual implementation of <see cref="ApplyWithCopy{TSrc,TDst}"/> and
-        /// <see cref="ApplyWithEitherDefinedCopy{TSrc,TDst}"/>, that has internal branches on the implementation
-        /// where necessary depending on whether this is an inner or outer join of the
+        /// The actual implementation of <see cref="VBufferUtils.ApplyWithCopy{TSrc, TDst}"/>,
+        /// <see cref="VBufferUtils.ApplyWithCopy{TSrc, TDst, TPairManipulator}"/>,
+        /// <see cref="ApplyWithEitherDefinedCopy{TSrc,TDst}"/> and
+        /// <see cref="ApplyWithEitherDefinedCopy{TSrc,TDst, TPairManipulator}"/>, that has internal 
+        /// branches on the implementation where necessary depending on whether this is an inner or outer join of the
         /// indices of <paramref name="src"/> on <paramref name="dst"/>.
         /// </summary>
-        private static void ApplyWithCoreCopy<TSrc, TDst, TPairManipulator, TBoolValue>(ref VBuffer<TSrc> src, ref VBuffer<TDst> dst, ref VBuffer<TDst> res, TPairManipulator manip, bool outer) 
+        private static void ApplyWithCoreCopy<TSrc, TDst, TPairManipulator, TBoolValue>(ref VBuffer<TSrc> src, ref VBuffer<TDst> dst, ref VBuffer<TDst> res, TPairManipulator manip, TBoolValue outer) 
             where TPairManipulator : struct, IPairManipulatorCopy<TSrc, TDst>
             where TBoolValue : struct, IBoolValue
         {
@@ -1225,7 +1230,7 @@ namespace Microsoft.ML.Runtime.Internal.Utilities
                 TDst[] resValues = Utils.Size(res.Values) >= length ? res.Values : new TDst[length];
                 if (src.Count == 0)
                 {
-                    if (outer)
+                    if (outer.Value)
                     {
                         // Apply manip to all slots, as all slots of dst are defined.
                         for (int j = 0; j < length; j++)
@@ -1254,7 +1259,7 @@ namespace Microsoft.ML.Runtime.Internal.Utilities
 
                     int ii = 0;
                     int i = src.Indices[ii];
-                    if (outer)
+                    if (outer.Value)
                     {
                         // All slots of dst are defined. Always apply manip.
                         for (int j = 0; j < length; j++)
@@ -1294,7 +1299,7 @@ namespace Microsoft.ML.Runtime.Internal.Utilities
                 {
                     int[] resIndices = Utils.Size(res.Indices) >= dstCount ? res.Indices : new int[dstCount];
                     TDst[] resValues = Utils.Size(res.Values) >= dstCount ? res.Values : new TDst[dstCount];
-                    if (outer)
+                    if (outer.Value)
                     {
                         for (int jj = 0; jj < dstCount; jj++)
                         {
@@ -1401,7 +1406,7 @@ namespace Microsoft.ML.Runtime.Internal.Utilities
                                 // Otherwise just copy.
                                 resIndices[kk] = j;
                                 // REVIEW: Should we move checking of outer outside the loop?
-                                if (outer)
+                                if (outer.Value)
                                     manip.Manipulate(j, default(TSrc), dst.Values[jj], ref resValues[kk]);
                                 else
                                     resValues[kk] = dst.Values[jj];

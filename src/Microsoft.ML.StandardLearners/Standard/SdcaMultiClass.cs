@@ -121,6 +121,13 @@ namespace Microsoft.ML.Runtime.Learners
                     // This will be used to update the unregularized bias corresponding to the label class.
                     Float labelAdjustment = 0;
 
+                    Float dual = 0.0f;
+                    Float dualUpdate = 0.0f;
+                    bool success = false;
+
+                    Visitor dualsVisitor = (long index, ref Float value) =>
+                                success = Interlocked.CompareExchange(ref value, dual + dualUpdate, dual) == dual;
+
                     // Iterates through all classes.
                     for (int iClass = 0; iClass < numClasses; iClass++)
                     {
@@ -134,17 +141,16 @@ namespace Microsoft.ML.Runtime.Learners
                         for (int numTrials = 0; numTrials < maxUpdateTrials; numTrials++)
                         {
                             long dualIndex = iClass + dualIndexInitPos;
-                            var dual = duals[dualIndex];
+                            dual = duals[dualIndex];
                             var output = labelOutput + labelPrimalUpdate * normSquared - WDot(ref features, ref weights[iClass], biasReg[iClass] + biasUnreg[iClass]);
-                            var dualUpdate = _loss.DualUpdate(output, 1, dual, invariant, numThreads);
+                            dualUpdate = _loss.DualUpdate(output, 1, dual, invariant, numThreads);
 
                             // The successive over-relaxation apporach to adjust the sum of dual variables (biasReg) to zero.
                             // Reference to details: http://stat.rutgers.edu/home/tzhang/papers/ml02_dual.pdf, pp. 16-17. 
                             var adjustment = l1ThresholdZero ? lr * biasReg[iClass] : lr * l1IntermediateBias[iClass];
                             dualUpdate -= adjustment;
-                            bool success = false;
-                            duals.ApplyAt(dualIndex, (long index, ref Float value) =>
-                                success = Interlocked.CompareExchange(ref value, dual + dualUpdate, dual) == dual);
+                            success = false;
+                            duals.ApplyAt(dualIndex, dualsVisitor);
 
                             if (success)
                             {

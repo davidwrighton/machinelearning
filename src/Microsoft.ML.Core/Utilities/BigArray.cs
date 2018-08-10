@@ -110,27 +110,28 @@ namespace Microsoft.ML.Runtime.Internal.Utilities
             _entries[blockCount - 1] = new T[lastBlockSize];
         }
 
-        public delegate void Visitor(long index, ref T item);
+        public interface IBigArrayVisitor
+        {
+            void Visit(long index, ref T item);
+        }
 
         /// <summary>
-        /// Applies a <see cref="Visitor"/> method at a given <paramref name="index"/>.
+        /// Applies a visitor method at a given <paramref name="index"/>. 
         /// </summary>
-        public void ApplyAt(long index, Visitor manip)
+        public void ApplyAt<TVisitor>(long index, TVisitor manip) where TVisitor : struct, IBigArrayVisitor
         {
-            Contracts.CheckValue(manip, nameof(manip));
             Contracts.CheckParam(0 <= index && index < _length, nameof(index), "Index out of range.");
             int bI = (int)(index >> BlockSizeBits);
             int idx = (int)(index & BlockSizeMinusOne);
-            manip(index, ref _entries[bI][idx]);
+            manip.Visit(index, ref _entries[bI][idx]);
         }
 
         /// <summary>
         /// Implements a more efficient way to loop over index range in [min, lim) and apply
         /// the specified method delegate.
         /// </summary>
-        public void ApplyRange(long min, long lim, Visitor manip)
+        public void ApplyRange<TVisitor>(long min, long lim, TVisitor manip) where TVisitor : struct, IBigArrayVisitor
         {
-            Contracts.CheckValue(manip, nameof(manip));
             Contracts.CheckParam(min >= 0, nameof(min), "Specified minimum index must be non-negative.");
             Contracts.CheckParam(lim <= _length, nameof(lim), "Specified limit index must be no more than length of the array.");
             if (min >= lim)
@@ -148,7 +149,7 @@ namespace Microsoft.ML.Runtime.Internal.Utilities
                 int idxMax = bI == maxBlockIndex ? maxIndexInBlock : BlockSizeMinusOne;
                 var block = _entries[bI];
                 for (int idx = idxMin; idx <= idxMax; idx++)
-                    manip(index++, ref block[idx]);
+                    manip.Visit(index++, ref block[idx]);
             }
             Contracts.Assert(index == lim);
         }

@@ -98,8 +98,8 @@ namespace Microsoft.ML.Runtime.Learners
         }
 
         /// <inheritdoc/>
-        protected override void TrainWithoutLock(IProgressChannelProvider progress, FloatLabelCursor.Factory cursorFactory, IRandom rand,
-            IdToIdxLookup idToIdx, int numThreads, DualsTableBase duals, Float[] biasReg, Float[] invariants, Float lambdaNInv,
+        protected override void TrainWithoutLock<TDualsTable>(IProgressChannelProvider progress, FloatLabelCursor.Factory cursorFactory, IRandom rand,
+            IdToIdxLookup idToIdx, int numThreads, TDualsTable duals, Float[] biasReg, Float[] invariants, Float lambdaNInv,
             VBuffer<Float>[] weights, Float[] biasUnreg, VBuffer<Float>[] l1IntermediateWeights, Float[] l1IntermediateBias, Float[] featureNormSquared)
         {
             Contracts.AssertValueOrNull(progress);
@@ -168,29 +168,28 @@ namespace Microsoft.ML.Runtime.Learners
                         if (iClass == label)
                             continue;
 
+                        InterlockedAdjustDuals dualsAdjust = new InterlockedAdjustDuals();
                         // Loop trials for compare-and-swap updates of duals.
                         // In general, concurrent update conflict to the same dual variable is rare
                         // if data is shuffled.
                         for (int numTrials = 0; numTrials < maxUpdateTrials; numTrials++)
                         {
                             long dualIndex = iClass + dualIndexInitPos;
-                            var dual = duals[dualIndex];
+                            dualsAdjust.dual = duals[dualIndex];
                             var output = labelOutput + labelPrimalUpdate * normSquared - WDot(ref features, ref weights[iClass], biasReg[iClass] + biasUnreg[iClass]);
-                            var dualUpdate = _loss.DualUpdate(output, 1, dual, invariant, numThreads);
+                            dualsAdjust.dualUpdate = _loss.DualUpdate(output, 1, dualsAdjust.dual, invariant, numThreads);
 
                             // The successive over-relaxation apporach to adjust the sum of dual variables (biasReg) to zero.
                             // Reference to details: http://stat.rutgers.edu/home/tzhang/papers/ml02_dual.pdf, pp. 16-17.
                             var adjustment = l1ThresholdZero ? lr * biasReg[iClass] : lr * l1IntermediateBias[iClass];
-                            dualUpdate -= adjustment;
-                            bool success = false;
-                            duals.ApplyAt(dualIndex, (long index, ref Float value) =>
-                                success = Interlocked.CompareExchange(ref value, dual + dualUpdate, dual) == dual);
+                            dualsAdjust.dualUpdate -= adjustment;
+                            duals.ApplyAt(dualIndex, dualsAdjust);
 
-                            if (success)
+                            if (dualsAdjust.success)
                             {
                                 // Note: dualConstraint[iClass] = lambdaNInv * (sum of duals[iClass])
-                                var primalUpdate = dualUpdate * lambdaNInv * instanceWeight;
-                                labelDual -= dual + dualUpdate;
+                                var primalUpdate = dualsAdjust.dualUpdate * lambdaNInv * instanceWeight;
+                                labelDual -= dualsAdjust.dual + dualsAdjust.dualUpdate;
                                 labelPrimalUpdate += primalUpdate;
                                 biasUnreg[iClass] += adjustment * lambdaNInv * instanceWeight;
                                 labelAdjustment -= adjustment;
@@ -253,11 +252,11 @@ namespace Microsoft.ML.Runtime.Learners
         }
 
         /// <inheritdoc/>
-        protected override bool CheckConvergence(
+        protected override bool CheckConvergence<TDualsTable>(
             IProgressChannel pch,
             int iter,
             FloatLabelCursor.Factory cursorFactory,
-            DualsTableBase duals,
+            TDualsTable duals,
             IdToIdxLookup idToIdx,
             VBuffer<Float>[] weights,
             VBuffer<Float>[] bestWeights,
@@ -271,7 +270,6 @@ namespace Microsoft.ML.Runtime.Learners
             ref int bestIter)
         {
             Contracts.AssertValue(weights);
-            Contracts.AssertValue(duals);
             int numClasses = weights.Length;
             Contracts.Assert(duals.Length >= numClasses * count);
             Contracts.AssertValueOrNull(idToIdx);

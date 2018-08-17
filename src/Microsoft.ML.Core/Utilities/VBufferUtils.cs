@@ -180,31 +180,31 @@ namespace Microsoft.ML.Runtime.Internal.Utilities
         public static void ForEachDefined<T, TVisitor>(ref VBuffer<T> a, TVisitor visitor) where TVisitor : struct, IForEachDefinedVisitor<T>
         {
             // Make local copies so jit can see the VBuffer fields aren't modified
-            VBuffer<T> local_a = a;
+            VBuffer<T> localA = a;
 
-            T[] data_a = local_a.Values;
+            T[] dataA = localA.Values;
 
             // REVIEW: This is analogous to an old Vector method, but is there
             // any real reason to have it given that we have the Items extension method?
-            if (local_a.IsDense)
+            if (localA.IsDense)
             {
-                if (local_a.Length > data_a.Length)
+                if (localA.Length > dataA.Length)
                     throw new IndexOutOfRangeException();
 
-                for (int i = 0; i < local_a.Length; i++)
+                for (int i = 0; i < localA.Length; i++)
                 {
                     visitor.Visit(i, a.Values[i]);
                 }
             }
             else
             {
-                int[] indices_a = local_a.Indices;
+                int[] indicesA = localA.Indices;
 
-                if (local_a.Count > indices_a.Length)
+                if (localA.Count > indicesA.Length)
                     throw new IndexOutOfRangeException();
 
-                for (int i = 0; i < indices_a.Length && i < local_a.Count; i++)
-                    visitor.Visit(indices_a[i], data_a[i]);
+                for (int i = 0; i < indicesA.Length && i < localA.Count; i++)
+                    visitor.Visit(indicesA[i], dataA[i]);
             }
         }
 
@@ -257,30 +257,30 @@ namespace Microsoft.ML.Runtime.Internal.Utilities
         public static void ForEachBothDefined<T, TVisitor>(ref VBuffer<T> a, ref VBuffer<T> b, TVisitor visitor) where TVisitor : struct, IForEachPairVisitor<T>
         {
             // Make local copies so jit can see the VBuffer fields aren't modified
-            VBuffer<T> local_a = a;
-            VBuffer<T> local_b = b;
+            VBuffer<T> localA = a;
+            VBuffer<T> localB = b;
 
-            T[] data_a = local_a.Values;
-            T[] data_b = local_b.Values;
+            T[] dataA = localA.Values;
+            T[] dataB = localB.Values;
 
             Contracts.Check(a.Length == b.Length, "Vectors must have the same dimensionality.");
 
             if (a.IsDense && b.IsDense)
             {
                 for (int i = 0; i < a.Length; i++)
-                    visitor.Visit(i, data_a[i], data_b[i]);
+                    visitor.Visit(i, dataA[i], dataB[i]);
             }
             else if (b.IsDense)
             {
-                int[] indices_a = a.Indices;
+                int[] indicesA = a.Indices;
                 for (int i = 0; i < a.Count; i++)
-                    visitor.Visit(indices_a[i], data_a[i], data_b[indices_a[i]]);
+                    visitor.Visit(indicesA[i], dataA[i], dataB[indicesA[i]]);
             }
             else if (a.IsDense)
             {
-                int[] indices_b = b.Indices;
+                int[] indicesB = b.Indices;
                 for (int i = 0; i < b.Count; i++)
-                    visitor.Visit(indices_b[i], data_a[indices_b[i]], data_b[i]);
+                    visitor.Visit(indicesB[i], dataA[indicesB[i]], dataB[i]);
             }
             else
             {
@@ -292,7 +292,7 @@ namespace Microsoft.ML.Runtime.Internal.Utilities
                     int i = a.Indices[aI];
                     int j = b.Indices[bI];
                     if (i == j)
-                        visitor.Visit(i, data_a[aI++], data_b[bI++]);
+                        visitor.Visit(i, dataA[aI++], dataB[bI++]);
                     else if (i < j)
                         aI++;
                     else
@@ -404,7 +404,7 @@ namespace Microsoft.ML.Runtime.Internal.Utilities
 
         public struct SlotValueDelegateManipulator<T> : ISlotValueManipulator<T>
         {
-            SlotValueManipulator<T> _manip;
+            private SlotValueManipulator<T> _manip;
 
             public SlotValueDelegateManipulator(SlotValueManipulator<T> manip)
             {
@@ -431,7 +431,7 @@ namespace Microsoft.ML.Runtime.Internal.Utilities
 
         public struct ValueDelegatePredicate<T> : IValuePredicate<T>
         {
-            ValuePredicate<T> _pred;
+            private ValuePredicate<T> _pred;
 
             public ValueDelegatePredicate(ValuePredicate<T> pred)
             {
@@ -443,7 +443,6 @@ namespace Microsoft.ML.Runtime.Internal.Utilities
                 return _pred(ref value);
             }
         }
-
 
         /// <summary>
         /// Applies the <paramref name="manip"/> to every explicitly defined
@@ -461,20 +460,20 @@ namespace Microsoft.ML.Runtime.Internal.Utilities
         /// </summary>
         public static void Apply<T, TManip>(ref VBuffer<T> dst, TManip manip) where TManip:struct, ISlotValueManipulator<T>
         {
-            VBuffer<T> local_dst = dst;
+            VBuffer<T> localDst = dst;
 
-            T[] data_dst = local_dst.Values;
+            T[] dataDst = localDst.Values;
 
-            if (local_dst.IsDense)
+            if (localDst.IsDense)
             {
-                for (int i = 0; i < local_dst.Length; i++)
-                    manip.Manipulate(i, ref data_dst[i]);
+                for (int i = 0; i < localDst.Length; i++)
+                    manip.Manipulate(i, ref dataDst[i]);
             }
             else
             {
-                int[] indices_dst = local_dst.Indices;
-                for (int i = 0; i < local_dst.Count; i++)
-                    manip.Manipulate(indices_dst[i], ref data_dst[i]);
+                int[] indicesDst = localDst.Indices;
+                for (int i = 0; i < localDst.Count; i++)
+                    manip.Manipulate(indicesDst[i], ref dataDst[i]);
             }
         }
 
@@ -697,9 +696,9 @@ namespace Microsoft.ML.Runtime.Internal.Utilities
             void Manipulate(int slot, TSrc src, ref TDst dst);
         }
 
-        struct PairDelegateManipulator<TSrc, TDst> : IPairManipulator<TSrc, TDst>
+        private struct PairDelegateManipulator<TSrc, TDst> : IPairManipulator<TSrc, TDst>
         {
-            PairManipulator<TSrc, TDst> _manip;
+            private PairManipulator<TSrc, TDst> _manip;
 
             public PairDelegateManipulator(PairManipulator<TSrc, TDst> manip)
             {
@@ -727,9 +726,9 @@ namespace Microsoft.ML.Runtime.Internal.Utilities
             void Manipulate(int slot, TSrc src, TDst dst, ref TDst res);
         }
 
-        struct PairDelegateManipulatorCopy<TSrc, TDst> : IPairManipulatorCopy<TSrc, TDst>
+        private struct PairDelegateManipulatorCopy<TSrc, TDst> : IPairManipulatorCopy<TSrc, TDst>
         {
-            PairManipulatorCopy<TSrc, TDst> _manip;
+            private PairManipulatorCopy<TSrc, TDst> _manip;
 
             public PairDelegateManipulatorCopy(PairManipulatorCopy<TSrc, TDst> manip)
             {
@@ -742,7 +741,7 @@ namespace Microsoft.ML.Runtime.Internal.Utilities
             }
         }
 
-        interface IBoolValue
+        private interface IBoolValue
         {
             bool Value {get;}
         }
@@ -787,7 +786,7 @@ namespace Microsoft.ML.Runtime.Internal.Utilities
         /// <param name="src">Argument vector, whose elements are only read</param>
         /// <param name="dst">Argument vector, that could change</param>
         /// <param name="manip">Function to apply to each pair of elements</param>
-        public static void ApplyWith<TSrc, TDst, TPairManipulator>(ref VBuffer<TSrc> src, ref VBuffer<TDst> dst, TPairManipulator manip) 
+        public static void ApplyWith<TSrc, TDst, TPairManipulator>(ref VBuffer<TSrc> src, ref VBuffer<TDst> dst, TPairManipulator manip)
             where TPairManipulator : struct, IPairManipulator<TSrc, TDst>
         {
             ApplyWithCore(ref src, ref dst, manip, outer: new BoolFalse());
@@ -815,9 +814,9 @@ namespace Microsoft.ML.Runtime.Internal.Utilities
 
         /// <summary>
         /// Applies the <see cref="PairManipulator{TSrc,TDst}"/> to each pair of elements
-        /// where <paramref name="src"/> is defined, in order of index. It stores the result 
-        /// in another vector. If there is some value at an index in <paramref name="dst"/> 
-        /// that is not defined in <paramref name="src"/>, that slot value is copied to the 
+        /// where <paramref name="src"/> is defined, in order of index. It stores the result
+        /// in another vector. If there is some value at an index in <paramref name="dst"/>
+        /// that is not defined in <paramref name="src"/>, that slot value is copied to the
         /// corresponding slot in the result vector without any further modification.
         /// If either of the vectors are dense, the resulting <paramref name="res"/>
         /// will be dense. Otherwise, if both are sparse, the output will be sparse iff
@@ -827,7 +826,7 @@ namespace Microsoft.ML.Runtime.Internal.Utilities
         /// <param name="dst">Argument vector, whose elements are only read</param>
         /// <param name="res">Result vector</param>
         /// <param name="manip">Function to apply to each pair of elements</param>
-        public static void ApplyWithCopy<TSrc, TDst, TPairManipulator>(ref VBuffer<TSrc> src, ref VBuffer<TDst> dst, ref VBuffer<TDst> res, TPairManipulator manip) 
+        public static void ApplyWithCopy<TSrc, TDst, TPairManipulator>(ref VBuffer<TSrc> src, ref VBuffer<TDst> dst, ref VBuffer<TDst> res, TPairManipulator manip)
             where TPairManipulator : struct, IPairManipulatorCopy<TSrc, TDst>
         {
             ApplyWithCoreCopy(ref src, ref dst, ref res, manip, outer: new BoolFalse());
@@ -861,7 +860,7 @@ namespace Microsoft.ML.Runtime.Internal.Utilities
         /// <param name="src">Argument vector, whose elements are only read</param>
         /// <param name="dst">Argument vector, that could change</param>
         /// <param name="manip">Function to apply to each pair of elements</param>
-        public static void ApplyWithEitherDefined<TSrc, TDst, TPairManipulator>(ref VBuffer<TSrc> src, ref VBuffer<TDst> dst, TPairManipulator manip) 
+        public static void ApplyWithEitherDefined<TSrc, TDst, TPairManipulator>(ref VBuffer<TSrc> src, ref VBuffer<TDst> dst, TPairManipulator manip)
             where TPairManipulator : struct, IPairManipulator<TSrc, TDst>
         {
             ApplyWithCore(ref src, ref dst, manip, outer: new BoolTrue());
@@ -888,7 +887,7 @@ namespace Microsoft.ML.Runtime.Internal.Utilities
         /// <summary>
         /// Applies the <see cref="PairManipulator{TSrc,TDst}"/> to each pair of elements
         /// where either <paramref name="src"/> or <paramref name="dst"/>, has an element
-        /// defined at that index. It stores the result in another vector <paramref name="res"/>. 
+        /// defined at that index. It stores the result in another vector <paramref name="res"/>.
         /// If either of the vectors are dense, the resulting <paramref name="res"/>
         /// will be dense. Otherwise, if both are sparse, the output will be sparse iff
         /// there is any slot that is not explicitly represented in either vector.
@@ -897,7 +896,7 @@ namespace Microsoft.ML.Runtime.Internal.Utilities
         /// <param name="dst">Argument vector, whose elements are only read</param>
         /// <param name="res">Result vector</param>
         /// <param name="manip">Function to apply to each pair of elements</param>
-        public static void ApplyWithEitherDefinedCopy<TSrc, TDst, TPairManipulator>(ref VBuffer<TSrc> src, ref VBuffer<TDst> dst, ref VBuffer<TDst> res, TPairManipulator manip) 
+        public static void ApplyWithEitherDefinedCopy<TSrc, TDst, TPairManipulator>(ref VBuffer<TSrc> src, ref VBuffer<TDst> dst, ref VBuffer<TDst> res, TPairManipulator manip)
             where TPairManipulator : struct, IPairManipulatorCopy<TSrc, TDst>
         {
             ApplyWithCoreCopy(ref src, ref dst, ref res, manip, outer: new BoolTrue());
@@ -907,13 +906,13 @@ namespace Microsoft.ML.Runtime.Internal.Utilities
         /// The actual implementation of <see cref="VBufferUtils.ApplyWith{TSrc, TDst}"/>,
         /// <see cref="VBufferUtils.ApplyWith{TSrc, TDst, TPairManipulator}"/>,
         /// <see cref="ApplyWithEitherDefined{TSrc,TDst}"/> and
-        /// <see cref="ApplyWithEitherDefined{TSrc,TDst, TPairManipulator}"/>, that has 
-        /// internal branches on the implementation where necessary depending on whether 
-        /// this is an inner or outer join of the indices of <paramref name="src"/> on 
+        /// <see cref="ApplyWithEitherDefined{TSrc,TDst, TPairManipulator}"/>, that has
+        /// internal branches on the implementation where necessary depending on whether
+        /// this is an inner or outer join of the indices of <paramref name="src"/> on
         /// <paramref name="dst"/>.
         /// </summary>
-        private static void ApplyWithCore<TSrc, TDst, TPairManipulator, TBoolValue>(ref VBuffer<TSrc> src, ref VBuffer<TDst> dst, TPairManipulator manip, TBoolValue outer) 
-            where TPairManipulator : struct, IPairManipulator<TSrc, TDst> 
+        private static void ApplyWithCore<TSrc, TDst, TPairManipulator, TBoolValue>(ref VBuffer<TSrc> src, ref VBuffer<TDst> dst, TPairManipulator manip, TBoolValue outer)
+            where TPairManipulator : struct, IPairManipulator<TSrc, TDst>
             where TBoolValue : struct, IBoolValue
         {
             Contracts.Check(src.Length == dst.Length, "Vectors must have the same dimensionality.");
@@ -1183,11 +1182,11 @@ namespace Microsoft.ML.Runtime.Internal.Utilities
         /// The actual implementation of <see cref="VBufferUtils.ApplyWithCopy{TSrc, TDst}"/>,
         /// <see cref="VBufferUtils.ApplyWithCopy{TSrc, TDst, TPairManipulator}"/>,
         /// <see cref="ApplyWithEitherDefinedCopy{TSrc,TDst}"/> and
-        /// <see cref="ApplyWithEitherDefinedCopy{TSrc,TDst, TPairManipulator}"/>, that has internal 
+        /// <see cref="ApplyWithEitherDefinedCopy{TSrc,TDst, TPairManipulator}"/>, that has internal
         /// branches on the implementation where necessary depending on whether this is an inner or outer join of the
         /// indices of <paramref name="src"/> on <paramref name="dst"/>.
         /// </summary>
-        private static void ApplyWithCoreCopy<TSrc, TDst, TPairManipulator, TBoolValue>(ref VBuffer<TSrc> src, ref VBuffer<TDst> dst, ref VBuffer<TDst> res, TPairManipulator manip, TBoolValue outer) 
+        private static void ApplyWithCoreCopy<TSrc, TDst, TPairManipulator, TBoolValue>(ref VBuffer<TSrc> src, ref VBuffer<TDst> dst, ref VBuffer<TDst> res, TPairManipulator manip, TBoolValue outer)
             where TPairManipulator : struct, IPairManipulatorCopy<TSrc, TDst>
             where TBoolValue : struct, IBoolValue
         {

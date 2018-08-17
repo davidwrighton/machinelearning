@@ -116,7 +116,7 @@ namespace Microsoft.ML.Runtime.Internal.Utilities
         }
 
         /// <summary>
-        /// Applies a visitor method at a given <paramref name="index"/>. 
+        /// Applies a visitor method at a given <paramref name="index"/>.
         /// </summary>
         public void ApplyAt<TVisitor>(long index, TVisitor manip) where TVisitor : struct, IBigArrayVisitor
         {

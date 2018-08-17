@@ -410,7 +410,7 @@ namespace Microsoft.ML.Runtime.Learners
                     int invariantsLength = (int)idLoMax + 1;
                     Contracts.Assert(invariantsLength <= Utils.ArrayMaxSize);
                     invariants = new Float[invariantsLength];
-                    return TrainCoreDualsChosen(ch, data, predictor, weightSetCount, cursorFactory, count, idLoMax, idToIdx, checkFrequency, numThreads, numFeatures, invariants, 
+                    return TrainCoreDualsChosen(ch, data, predictor, weightSetCount, cursorFactory, count, idLoMax, idToIdx, checkFrequency, numThreads, numFeatures, invariants,
                         new StandardArrayDualsTable((int)dualsLength));
                 }
                 else
@@ -420,7 +420,7 @@ namespace Microsoft.ML.Runtime.Learners
                     // Storing the invariants gives rise to too large memory consumption,
                     // so we favor re-computing the invariants instead of storing them.
                     Contracts.Assert(dualsLength <= MaxDualTableSize);
-                    return TrainCoreDualsChosen(ch, data, predictor, weightSetCount, cursorFactory, count, idLoMax, idToIdx, checkFrequency, numThreads, numFeatures, invariants, 
+                    return TrainCoreDualsChosen(ch, data, predictor, weightSetCount, cursorFactory, count, idLoMax, idToIdx, checkFrequency, numThreads, numFeatures, invariants,
                         new BigArrayDualsTable(dualsLength));
                 }
             }
@@ -433,23 +433,23 @@ namespace Microsoft.ML.Runtime.Learners
                 {
                     Contracts.Assert(count <= Utils.ArrayMaxSize);
                     invariants = new Float[count];
-                    return TrainCoreDualsChosen(ch, data, predictor, weightSetCount, cursorFactory, count, idLoMax, idToIdx, checkFrequency, numThreads, numFeatures, invariants, 
+                    return TrainCoreDualsChosen(ch, data, predictor, weightSetCount, cursorFactory, count, idLoMax, idToIdx, checkFrequency, numThreads, numFeatures, invariants,
                         new StandardArrayDualsTable((int)dualsLength));
                 }
                 else
                 {
                     Contracts.Assert(dualsLength <= MaxDualTableSize);
-                    return TrainCoreDualsChosen(ch, data, predictor, weightSetCount, cursorFactory, count, idLoMax, idToIdx, checkFrequency, numThreads, numFeatures, invariants, 
+                    return TrainCoreDualsChosen(ch, data, predictor, weightSetCount, cursorFactory, count, idLoMax, idToIdx, checkFrequency, numThreads, numFeatures, invariants,
                         new BigArrayDualsTable(count));
                 }
             }
 
         }
 
-        private TPredictor TrainCoreDualsChosen<TDualsTable>(IChannel ch, 
-                                                             RoleMappedData data, 
-                                                             LinearPredictor predictor, 
-                                                             int weightSetCount, 
+        private TPredictor TrainCoreDualsChosen<TDualsTable>(IChannel ch,
+                                                             RoleMappedData data,
+                                                             LinearPredictor predictor,
+                                                             int weightSetCount,
                                                              FloatLabelCursor.Factory cursorFactory,
                                                              long count,
                                                              ulong idLoMax,
@@ -698,13 +698,13 @@ namespace Microsoft.ML.Runtime.Learners
 
         public struct InterlockedAdjustDuals : IDualsTableBaseVistor
         {
-            public bool success;
-            public Float dual;
-            public Float dualUpdate;
+            public bool Success;
+            public Float Dual;
+            public Float DualUpdate;
 
             public void Visit(long index, ref Float value)
             {
-                success = Interlocked.CompareExchange(ref value, dual + dualUpdate, dual) == dual;
+                Success = Interlocked.CompareExchange(ref value, Dual + DualUpdate, Dual) == Dual;
             }
         }
         /// <summary>
@@ -799,21 +799,21 @@ namespace Microsoft.ML.Runtime.Learners
 
                     for (int numTrials = 0; numTrials < maxUpdateTrials; numTrials++)
                     {
-                        dualsAdjust.dual = duals[idx];
+                        dualsAdjust.Dual = duals[idx];
                         var output = WDot(ref features, ref weights[0], biasReg[0] + biasUnreg[0]);
-                        dualsAdjust.dualUpdate = Loss.DualUpdate(output, label, dualsAdjust.dual, invariant, numThreads);
+                        dualsAdjust.DualUpdate = Loss.DualUpdate(output, label, dualsAdjust.Dual, invariant, numThreads);
 
                         // The successive over-relaxation apporach to adjust the sum of dual variables (biasReg) to zero.
                         // Reference to details: http://stat.rutgers.edu/home/tzhang/papers/ml02_dual.pdf pp. 16-17.
                         var adjustment = l1ThresholdZero ? lr * biasReg[0] : lr * l1IntermediateBias[0];
-                        dualsAdjust.dualUpdate -= adjustment;
+                        dualsAdjust.DualUpdate -= adjustment;
                         duals.ApplyAt(idx, dualsAdjust);
 
-                        if (dualsAdjust.success)
+                        if (dualsAdjust.Success)
                         {
                             // Note: dualConstraint = lambdaNInv * (sum of duals)
                             var instanceWeight = GetInstanceWeight(cursor);
-                            var primalUpdate = dualsAdjust.dualUpdate * lambdaNInv * instanceWeight;
+                            var primalUpdate = dualsAdjust.DualUpdate * lambdaNInv * instanceWeight;
                             biasUnreg[0] += adjustment * lambdaNInv * instanceWeight;
 
                             if (l1ThresholdZero)
@@ -996,7 +996,7 @@ namespace Microsoft.ML.Runtime.Learners
         protected interface IDualsTableBaseVistor
         {
             void Visit(long index, ref Float value);
-        } 
+        }
 
         /// <summary>
         /// Encapsulates the common functionality of storing and
@@ -1059,7 +1059,7 @@ namespace Microsoft.ML.Runtime.Learners
 
             private struct BigArrayVisitor<TVisitor> : BigArray<Float>.IBigArrayVisitor where TVisitor : struct, IDualsTableBaseVistor
             {
-                TVisitor _visitor;
+                private TVisitor _visitor;
                 public BigArrayVisitor(TVisitor visitor) { _visitor = visitor; }
                 public void Visit(long index, ref Float value)
                 {
@@ -1289,13 +1289,13 @@ namespace Microsoft.ML.Runtime.Learners
                 AssertValid();
             }
 
-            struct FillTableVisitor : BigArray<Entry>.IBigArrayVisitor
+            private struct FillTableVisitor : BigArray<Entry>.IBigArrayVisitor
             {
                 public FillTableVisitor(IdToIdxLookup lookup)
                 {
                     _lookup = lookup;
                 }
-                IdToIdxLookup _lookup;
+                private IdToIdxLookup _lookup;
 
                 public void Visit(long it, ref Entry entry)
                 {
@@ -1323,12 +1323,12 @@ namespace Microsoft.ML.Runtime.Learners
                 Contracts.Assert(_rgit.Length >= _count | _rgit.Length == HashHelpers.MaxPrime);
             }
 
-            struct DumpStatsVisitor : BigArray<long>.IBigArrayVisitor
+            private struct DumpStatsVisitor : BigArray<long>.IBigArrayVisitor
             {
-                public int c;
+                public int C;
                 public void Visit(long i, ref long value)
                 {
-                    if (value >= 0) c++;
+                    if (value >= 0) C++;
                 }
             }
 
@@ -1337,7 +1337,7 @@ namespace Microsoft.ML.Runtime.Learners
             {
                 DumpStatsVisitor visitor =  new DumpStatsVisitor();
                 _rgit.ApplyRange(0, _rgit.Length, visitor);
-                Console.WriteLine("Table: {0} out of {1}", visitor.c, _rgit.Length);
+                Console.WriteLine("Table: {0} out of {1}", visitor.C, _rgit.Length);
             }
 
             private static long Get64BitHashCode(UInt128 value)

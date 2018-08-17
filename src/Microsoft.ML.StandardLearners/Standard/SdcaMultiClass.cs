@@ -175,21 +175,21 @@ namespace Microsoft.ML.Runtime.Learners
                         for (int numTrials = 0; numTrials < maxUpdateTrials; numTrials++)
                         {
                             long dualIndex = iClass + dualIndexInitPos;
-                            dualsAdjust.dual = duals[dualIndex];
+                            dualsAdjust.Dual = duals[dualIndex];
                             var output = labelOutput + labelPrimalUpdate * normSquared - WDot(ref features, ref weights[iClass], biasReg[iClass] + biasUnreg[iClass]);
-                            dualsAdjust.dualUpdate = _loss.DualUpdate(output, 1, dualsAdjust.dual, invariant, numThreads);
+                            dualsAdjust.DualUpdate = _loss.DualUpdate(output, 1, dualsAdjust.Dual, invariant, numThreads);
 
                             // The successive over-relaxation apporach to adjust the sum of dual variables (biasReg) to zero.
                             // Reference to details: http://stat.rutgers.edu/home/tzhang/papers/ml02_dual.pdf, pp. 16-17.
                             var adjustment = l1ThresholdZero ? lr * biasReg[iClass] : lr * l1IntermediateBias[iClass];
-                            dualsAdjust.dualUpdate -= adjustment;
+                            dualsAdjust.DualUpdate -= adjustment;
                             duals.ApplyAt(dualIndex, dualsAdjust);
 
-                            if (dualsAdjust.success)
+                            if (dualsAdjust.Success)
                             {
                                 // Note: dualConstraint[iClass] = lambdaNInv * (sum of duals[iClass])
-                                var primalUpdate = dualsAdjust.dualUpdate * lambdaNInv * instanceWeight;
-                                labelDual -= dualsAdjust.dual + dualsAdjust.dualUpdate;
+                                var primalUpdate = dualsAdjust.DualUpdate * lambdaNInv * instanceWeight;
+                                labelDual -= dualsAdjust.Dual + dualsAdjust.DualUpdate;
                                 labelPrimalUpdate += primalUpdate;
                                 biasUnreg[iClass] += adjustment * lambdaNInv * instanceWeight;
                                 labelAdjustment -= adjustment;

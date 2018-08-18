@@ -93,6 +93,30 @@ namespace Microsoft.ML.Runtime.Numeric
                 get { return EvalCore; }
             }
 
+            private struct EvalCoreCheckBiasSumAbs : VBufferUtils.IForEachDefinedWithContextVisitor<Float, Float>
+            {
+                public EvalCoreCheckBiasSumAbs(int biasCount) { _biasCount = biasCount; }
+                private int _biasCount;
+                public void Visit(int ind, Float value, ref Float res) { if (ind >= _biasCount) res += Math.Abs(value); }
+            }
+
+            private struct EvalCoreSumAbs : VBufferUtils.IForEachDefinedWithContextVisitor<Float, Float>
+            {
+                public void Visit(int ind, Float value, ref Float res) { res += Math.Abs(value); }
+            }
+
+            private struct EvalCoreCheckBiasSum : VBufferUtils.IForEachDefinedWithContextVisitor<Float, Float>
+            {
+                public EvalCoreCheckBiasSum(int biasCount) { _biasCount = biasCount; }
+                private int _biasCount;
+                public void Visit(int ind, Float value, ref Float res) { if (ind >= _biasCount) res += value; }
+            }
+
+            private struct EvalCoreSum : VBufferUtils.IForEachDefinedWithContextVisitor<Float, Float>
+            {
+                public void Visit(int ind, Float value, ref Float res) { res += value; }
+            }
+
             /// <summary>
             /// This is the original differentiable function with the injected L1 term.
             /// </summary>
@@ -104,18 +128,16 @@ namespace Microsoft.ML.Runtime.Numeric
                 if (!EnforceNonNegativity)
                 {
                     if (_biasCount > 0)
-                        VBufferUtils.ForEachDefined(ref input,
-                            (ind, value) => { if (ind >= _biasCount) res += Math.Abs(value); });
+                        VBufferUtils.ForEachDefinedWithContext(ref input, ref res, new EvalCoreCheckBiasSumAbs(_biasCount));
                     else
-                        VBufferUtils.ForEachDefined(ref input, (ind, value) => res += Math.Abs(value));
+                        VBufferUtils.ForEachDefinedWithContext(ref input, ref res, new EvalCoreSumAbs());
                 }
                 else
                 {
                     if (_biasCount > 0)
-                        VBufferUtils.ForEachDefined(ref input,
-                            (ind, value) => { if (ind >= _biasCount) res += value; });
+                        VBufferUtils.ForEachDefinedWithContext(ref input, ref res, new EvalCoreCheckBiasSum(_biasCount));
                     else
-                        VBufferUtils.ForEachDefined(ref input, (ind, value) => res += value);
+                        VBufferUtils.ForEachDefinedWithContext(ref input, ref res, new EvalCoreSum());
                 }
                 res = _l1weight * res + _function(ref input, ref gradient, progress);
                 return res;

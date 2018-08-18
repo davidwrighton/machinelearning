@@ -473,13 +473,20 @@ namespace Microsoft.ML.Runtime.Learners
             int numParams = BiasCount;
             if ((L1Weight > 0 && !Quiet) || ShowTrainingStats)
             {
-                VBufferUtils.ForEachDefined(ref CurrentWeights, (index, value) => { if (index >= BiasCount && value != 0) numParams++; });
+                VBufferUtils.ForEachDefinedWithContext(ref CurrentWeights, ref numParams, new SelectWeights(BiasCount));
                 if (L1Weight > 0 && !Quiet)
                     ch.Info("L1 regularization selected {0} of {1} weights.", numParams, BiasCount + WeightCount);
             }
 
             if (ShowTrainingStats)
                 ComputeTrainingStatistics(ch, cursorFactory, loss, numParams);
+        }
+
+        private struct SelectWeights : VBufferUtils.IForEachDefinedWithContextVisitor<Float, int>
+        {
+            public SelectWeights(int biasCount) { _biasCount = biasCount; }
+            private int _biasCount;
+            public void Visit(int index, Float value, ref int numParams) { if (index >= _biasCount && value != 0) numParams++; }
         }
 
         // Ensure that the bias portion of vec is represented in vec.

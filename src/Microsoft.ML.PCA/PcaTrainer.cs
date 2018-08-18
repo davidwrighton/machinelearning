@@ -429,6 +429,16 @@ namespace Microsoft.ML.Runtime.PCA
             SaveAsText(writer, schema);
         }
 
+        private struct SaveAsTextWriteIfNotZeroVisitor : VBufferUtils.IForEachDefinedVisitor<Float>
+        {
+            public SaveAsTextWriteIfNotZeroVisitor(TextWriter writer) { _writer = writer; }
+            private TextWriter _writer;
+            public void Visit(int ind, float val)
+            {
+                 if (val != 0) _writer.Write(" {0}:{1}", ind, val);
+            }
+        }
+
         public void SaveAsText(TextWriter writer, RoleMappedSchema schema)
         {
             writer.WriteLine("Dimension: {0}", _dimension);
@@ -450,8 +460,7 @@ namespace Microsoft.ML.Runtime.PCA
             writer.WriteLine("# V");
             for (var i = 0; i < _rank; ++i)
             {
-                VBufferUtils.ForEachDefined(ref _eigenVectors[i],
-                    (ind, val) => { if (val != 0) writer.Write(" {0}:{1}", ind, val); });
+                VBufferUtils.ForEachDefined(ref _eigenVectors[i], new SaveAsTextWriteIfNotZeroVisitor(writer));
                 writer.WriteLine();
             }
         }

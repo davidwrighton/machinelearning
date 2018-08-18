@@ -148,6 +148,11 @@ namespace Microsoft.ML.Runtime.Internal.Utilities
             void Visit(int index, T value);
         }
 
+        public interface IForEachDefinedWithContextVisitor<T, TContext>
+        {
+            void Visit(int index, T value, ref TContext context);
+        }
+
         private struct ForEachDefinedDelegateVisitor<T> : IForEachDefinedVisitor<T>
         {
             public ForEachDefinedDelegateVisitor(Action<int, T> visitor)
@@ -163,11 +168,23 @@ namespace Microsoft.ML.Runtime.Internal.Utilities
             }
         }
 
+#if DELEGATE_BASED_VBUFFER_UTILS
         /// <summary>
         /// Applies <paramref name="visitor"/> to every explicitly defined element of the vector,
         /// in order of index.
         /// </summary>
         public static void ForEachDefined<T>(ref VBuffer<T> a, Action<int, T> visitor)
+        {
+            Contracts.CheckValue(visitor, nameof(visitor));
+            ForEachDefined(ref a, new ForEachDefinedDelegateVisitor<T>(visitor));
+        }
+#endif
+
+        /// <summary>
+        /// Applies <paramref name="visitor"/> to every explicitly defined element of the vector,
+        /// in order of index. This method requires a delegate, so is somewhat slower.
+        /// </summary>
+        public static void ForEachDefinedSlow<T>(ref VBuffer<T> a, Action<int, T> visitor)
         {
             Contracts.CheckValue(visitor, nameof(visitor));
             ForEachDefined(ref a, new ForEachDefinedDelegateVisitor<T>(visitor));
@@ -205,6 +222,41 @@ namespace Microsoft.ML.Runtime.Internal.Utilities
 
                 for (int i = 0; i < indicesA.Length && i < localA.Count; i++)
                     visitor.Visit(indicesA[i], dataA[i]);
+            }
+        }
+
+        /// <summary>
+        /// Applies <paramref name="visitor"/> to every explicitly defined element of the vector,
+        /// in order of index.
+        /// </summary>
+        public static void ForEachDefinedWithContext<T, TContext, TVisitor>(ref VBuffer<T> a, ref TContext context, TVisitor visitor) where TVisitor : struct, IForEachDefinedWithContextVisitor<T, TContext>
+        {
+            // Make local copies so jit can see the VBuffer fields aren't modified
+            VBuffer<T> localA = a;
+
+            T[] dataA = localA.Values;
+
+            // REVIEW: This is analogous to an old Vector method, but is there
+            // any real reason to have it given that we have the Items extension method?
+            if (localA.IsDense)
+            {
+                if (localA.Length > dataA.Length)
+                    throw new IndexOutOfRangeException();
+
+                for (int i = 0; i < localA.Length; i++)
+                {
+                    visitor.Visit(i, a.Values[i], ref context);
+                }
+            }
+            else
+            {
+                int[] indicesA = localA.Indices;
+
+                if (localA.Count > indicesA.Length)
+                    throw new IndexOutOfRangeException();
+
+                for (int i = 0; i < indicesA.Length && i < localA.Count; i++)
+                    visitor.Visit(indicesA[i], dataA[i], ref context);
             }
         }
 

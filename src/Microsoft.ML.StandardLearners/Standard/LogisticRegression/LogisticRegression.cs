@@ -91,6 +91,17 @@ namespace Microsoft.ML.Runtime.Learners
             return weight * datumLoss;
         }
 
+        private struct CompareToBiasCountAndAdjustRegLoss : VBufferUtils.IForEachDefinedWithContextVisitor<Float, Double>
+        {
+            public CompareToBiasCountAndAdjustRegLoss(int biasCount) { _biasCount = biasCount; }
+            private int _biasCount;
+
+            public void Visit(int index, Float value, ref Double regLoss)
+            {
+            if (index >= _biasCount) regLoss += Math.Abs(value);
+            }
+        }
+
         protected override void ComputeTrainingStatistics(IChannel ch, FloatLabelCursor.Factory cursorFactory, Float loss, int numParams)
         {
             Contracts.AssertValue(ch);
@@ -120,7 +131,7 @@ namespace Microsoft.ML.Runtime.Learners
                 // Need to subtract L1 regularization loss.
                 // The bias term is not regularized.
                 Double regLoss = 0;
-                VBufferUtils.ForEachDefined(ref CurrentWeights, (ind, value) => { if (ind >= BiasCount) regLoss += Math.Abs(value); });
+                VBufferUtils.ForEachDefinedWithContext(ref CurrentWeights, ref regLoss, new CompareToBiasCountAndAdjustRegLoss(BiasCount));
                 deviance -= (Float)regLoss * L1Weight * 2;
             }
 

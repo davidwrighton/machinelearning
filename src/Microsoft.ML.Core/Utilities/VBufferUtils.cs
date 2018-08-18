@@ -280,6 +280,7 @@ namespace Microsoft.ML.Runtime.Internal.Utilities
             }
         }
 
+#if DELEGATE_BASED_VBUFFER_UTILS
         /// <summary>
         /// Applies the <paramref name="visitor "/>to each corresponding pair of elements
         /// where the item is emplicitly defined in the vector. By explicitly defined,
@@ -295,6 +296,7 @@ namespace Microsoft.ML.Runtime.Internal.Utilities
             Contracts.CheckValue(visitor, nameof(visitor));
             ForEachBothDefined(ref a, ref b, new ForEachPairDelegateVisitor<T>(visitor));
         }
+#endif
 
         /// <summary>
         /// Applies the <paramref name="visitor "/>to each corresponding pair of elements

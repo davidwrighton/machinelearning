@@ -265,6 +265,16 @@ namespace Microsoft.ML.Runtime.Internal.Utilities
             void Visit(int index, T value, T value2);
         }
 
+        public interface IForEachPairShortcuttingVisitor<T>
+        {
+            bool Visit(int index, T value, T value2);
+        }
+
+        public interface IForEachPairWithContextVisitor<T, TContext>
+        {
+            void Visit(int index, T value, T value2, ref TContext context);
+        }
+
         private struct ForEachPairDelegateVisitor<T> : IForEachPairVisitor<T>
         {
             public ForEachPairDelegateVisitor(Action<int, T, T> visitor)
@@ -356,6 +366,65 @@ namespace Microsoft.ML.Runtime.Internal.Utilities
         }
 
         /// <summary>
+        /// Applies the <paramref name="visitor "/>to each corresponding pair of elements
+        /// where the item is emplicitly defined in the vector. By explicitly defined,
+        /// we mean that for a given index <c>i</c>, both vectors have an entry in
+        /// <see cref="VBuffer{T}.Values"/> corresponding to that index.
+        /// </summary>
+        /// <param name="a">The first vector</param>
+        /// <param name="b">The second vector</param>
+        /// <param name="context">The context passed by reference at each visit operation</param>
+        /// <param name="visitor">Operation to apply to each pair of non-zero values.
+        /// This is passed the index, and two values</param>
+        public static void ForEachBothDefinedWithContext<T, TContext, TVisitor>(ref VBuffer<T> a, ref VBuffer<T> b, ref TContext context, TVisitor visitor) where TVisitor : struct, IForEachPairWithContextVisitor<T, TContext>
+        {
+            // Make local copies so jit can see the VBuffer fields aren't modified
+            VBuffer<T> localA = a;
+            VBuffer<T> localB = b;
+
+            T[] dataA = localA.Values;
+            T[] dataB = localB.Values;
+
+            Contracts.Check(a.Length == b.Length, "Vectors must have the same dimensionality.");
+
+            if (a.IsDense && b.IsDense)
+            {
+                for (int i = 0; i < a.Length; i++)
+                    visitor.Visit(i, dataA[i], dataB[i], ref context);
+            }
+            else if (b.IsDense)
+            {
+                int[] indicesA = a.Indices;
+                for (int i = 0; i < a.Count; i++)
+                    visitor.Visit(indicesA[i], dataA[i], dataB[indicesA[i]], ref context);
+            }
+            else if (a.IsDense)
+            {
+                int[] indicesB = b.Indices;
+                for (int i = 0; i < b.Count; i++)
+                    visitor.Visit(indicesB[i], dataA[indicesB[i]], dataB[i], ref context);
+            }
+            else
+            {
+                // Both sparse.
+                int aI = 0;
+                int bI = 0;
+                while (aI < a.Count && bI < b.Count)
+                {
+                    int i = a.Indices[aI];
+                    int j = b.Indices[bI];
+                    if (i == j)
+                        visitor.Visit(i, dataA[aI++], dataB[bI++], ref context);
+                    else if (i < j)
+                        aI++;
+                    else
+                        bI++;
+                }
+            }
+        }
+
+#if DELEGATE_BASED_VBUFFER_UTILS
+        /// <summary>
         /// Applies the ParallelVisitor to each corresponding pair of elements where at least one is non-zero, in order of index.
         /// </summary>
         /// <param name="a">a vector</param>
@@ -363,13 +432,25 @@ namespace Microsoft.ML.Runtime.Internal.Utilities
         /// <param name="visitor">Function to apply to each pair of non-zero values - passed the index, and two values</param>
         public static void ForEachEitherDefined<T>(ref VBuffer<T> a, ref VBuffer<T> b, Action<int, T, T> visitor)
         {
-            Contracts.Check(a.Length == b.Length, "Vectors must have the same dimensionality.");
             Contracts.CheckValue(visitor, nameof(visitor));
+            ForEachEitherDefined(ref a, ref b, new ForEachPairDelegateVisitor<T>(visitor));
+        }
+#endif
+
+        /// <summary>
+        /// Applies the ParallelVisitor to each corresponding pair of elements where at least one is non-zero, in order of index.
+        /// </summary>
+        /// <param name="a">a vector</param>
+        /// <param name="b">another vector</param>
+        /// <param name="visitor">Function to apply to each pair of non-zero values - passed the index, and two values</param>
+        public static void ForEachEitherDefined<T, TVisitor>(ref VBuffer<T> a, ref VBuffer<T> b, TVisitor visitor) where TVisitor : struct, IForEachPairVisitor<T>
+        {
+            Contracts.Check(a.Length == b.Length, "Vectors must have the same dimensionality.");
 
             if (a.IsDense && b.IsDense)
             {
                 for (int i = 0; i < a.Length; ++i)
-                    visitor(i, a.Values[i], b.Values[i]);
+                    visitor.Visit(i, a.Values[i], b.Values[i]);
             }
             else if (b.IsDense)
             {
@@ -377,7 +458,7 @@ namespace Microsoft.ML.Runtime.Internal.Utilities
                 for (int i = 0; i < b.Length; i++)
                 {
                     T aVal = (aI < a.Count && i == a.Indices[aI]) ? a.Values[aI++] : default(T);
-                    visitor(i, aVal, b.Values[i]);
+                    visitor.Visit(i, aVal, b.Values[i]);
                 }
             }
             else if (a.IsDense)
@@ -386,7 +467,7 @@ namespace Microsoft.ML.Runtime.Internal.Utilities
                 for (int i = 0; i < a.Length; i++)
                 {
                     T bVal = (bI < b.Count && i == b.Indices[bI]) ? b.Values[bI++] : default(T);
-                    visitor(i, a.Values[i], bVal);
+                    visitor.Visit(i, a.Values[i], bVal);
                 }
             }
             else
@@ -399,31 +480,190 @@ namespace Microsoft.ML.Runtime.Internal.Utilities
                     int diff = a.Indices[aI] - b.Indices[bI];
                     if (diff == 0)
                     {
-                        visitor(b.Indices[bI], a.Values[aI], b.Values[bI]);
+                        visitor.Visit(b.Indices[bI], a.Values[aI], b.Values[bI]);
                         aI++;
                         bI++;
                     }
                     else if (diff < 0)
                     {
-                        visitor(a.Indices[aI], a.Values[aI], default(T));
+                        visitor.Visit(a.Indices[aI], a.Values[aI], default(T));
                         aI++;
                     }
                     else
                     {
-                        visitor(b.Indices[bI], default(T), b.Values[bI]);
+                        visitor.Visit(b.Indices[bI], default(T), b.Values[bI]);
                         bI++;
                     }
                 }
 
                 while (aI < a.Count)
                 {
-                    visitor(a.Indices[aI], a.Values[aI], default(T));
+                    visitor.Visit(a.Indices[aI], a.Values[aI], default(T));
                     aI++;
                 }
 
                 while (bI < b.Count)
                 {
-                    visitor(b.Indices[bI], default(T), b.Values[bI]);
+                    visitor.Visit(b.Indices[bI], default(T), b.Values[bI]);
+                    bI++;
+                }
+            }
+        }
+
+        /// <summary>
+        /// Applies the ParallelVisitor to each corresponding pair of elements where at least one is non-zero, in order of index. If any Visit operation returns false, then the function will return false otherwise it will return true.
+        /// </summary>
+        /// <param name="a">a vector</param>
+        /// <param name="b">another vector</param>
+        /// <param name="visitor">Function to apply to each pair of non-zero values - passed the index, and two values</param>
+        public static bool ForEachEitherDefinedShortcutting<T, TVisitor>(ref VBuffer<T> a, ref VBuffer<T> b, TVisitor visitor) where TVisitor : struct, IForEachPairShortcuttingVisitor<T>
+        {
+            Contracts.Check(a.Length == b.Length, "Vectors must have the same dimensionality.");
+
+            if (a.IsDense && b.IsDense)
+            {
+                for (int i = 0; i < a.Length; ++i)
+                {
+                    if (!visitor.Visit(i, a.Values[i], b.Values[i]))
+                        return false;
+                }
+            }
+            else if (b.IsDense)
+            {
+                int aI = 0;
+                for (int i = 0; i < b.Length; i++)
+                {
+                    T aVal = (aI < a.Count && i == a.Indices[aI]) ? a.Values[aI++] : default(T);
+                    if (!visitor.Visit(i, aVal, b.Values[i]))
+                        return false;
+                }
+            }
+            else if (a.IsDense)
+            {
+                int bI = 0;
+                for (int i = 0; i < a.Length; i++)
+                {
+                    T bVal = (bI < b.Count && i == b.Indices[bI]) ? b.Values[bI++] : default(T);
+                    if (!visitor.Visit(i, a.Values[i], bVal))
+                        return false;
+                }
+            }
+            else
+            {
+                // Both sparse
+                int aI = 0;
+                int bI = 0;
+                while (aI < a.Count && bI < b.Count)
+                {
+                    int diff = a.Indices[aI] - b.Indices[bI];
+                    if (diff == 0)
+                    {
+                        if (!visitor.Visit(b.Indices[bI], a.Values[aI], b.Values[bI]))
+                            return false;
+                        aI++;
+                        bI++;
+                    }
+                    else if (diff < 0)
+                    {
+                        if (!visitor.Visit(a.Indices[aI], a.Values[aI], default(T)))
+                            return false;
+                        aI++;
+                    }
+                    else
+                    {
+                        if (!visitor.Visit(b.Indices[bI], default(T), b.Values[bI]))
+                            return false;
+                        bI++;
+                    }
+                }
+
+                while (aI < a.Count)
+                {
+                    if (!visitor.Visit(a.Indices[aI], a.Values[aI], default(T)))
+                        return false;
+                    aI++;
+                }
+
+                while (bI < b.Count)
+                {
+                    if (!visitor.Visit(b.Indices[bI], default(T), b.Values[bI]))
+                        return false;
+                    bI++;
+                }
+            }
+
+            return true;
+        }
+
+        /// <summary>
+        /// Applies the ParallelVisitor to each corresponding pair of elements where at least one is non-zero, in order of index.
+        /// </summary>
+        /// <param name="a">a vector</param>
+        /// <param name="b">another vector</param>
+        /// <param name="context">The context passed by reference at each visit operation</param>
+        /// <param name="visitor">Function to apply to each pair of non-zero values - passed the index, and two values</param>
+        public static void ForEachEitherDefinedWithContext<T, TContext, TVisitor>(ref VBuffer<T> a, ref VBuffer<T> b, ref TContext context, TVisitor visitor) where TVisitor : struct, IForEachPairWithContextVisitor<T, TContext>
+        {
+            Contracts.Check(a.Length == b.Length, "Vectors must have the same dimensionality.");
+
+            if (a.IsDense && b.IsDense)
+            {
+                for (int i = 0; i < a.Length; ++i)
+                    visitor.Visit(i, a.Values[i], b.Values[i], ref context);
+            }
+            else if (b.IsDense)
+            {
+                int aI = 0;
+                for (int i = 0; i < b.Length; i++)
+                {
+                    T aVal = (aI < a.Count && i == a.Indices[aI]) ? a.Values[aI++] : default(T);
+                    visitor.Visit(i, aVal, b.Values[i], ref context);
+                }
+            }
+            else if (a.IsDense)
+            {
+                int bI = 0;
+                for (int i = 0; i < a.Length; i++)
+                {
+                    T bVal = (bI < b.Count && i == b.Indices[bI]) ? b.Values[bI++] : default(T);
+                    visitor.Visit(i, a.Values[i], bVal, ref context);
+                }
+            }
+            else
+            {
+                // Both sparse
+                int aI = 0;
+                int bI = 0;
+                while (aI < a.Count && bI < b.Count)
+                {
+                    int diff = a.Indices[aI] - b.Indices[bI];
+                    if (diff == 0)
+                    {
+                        visitor.Visit(b.Indices[bI], a.Values[aI], b.Values[bI], ref context);
+                        aI++;
+                        bI++;
+                    }
+                    else if (diff < 0)
+                    {
+                        visitor.Visit(a.Indices[aI], a.Values[aI], default(T), ref context);
+                        aI++;
+                    }
+                    else
+                    {
+                        visitor.Visit(b.Indices[bI], default(T), b.Values[bI], ref context);
+                        bI++;
+                    }
+                }
+
+                while (aI < a.Count)
+                {
+                    visitor.Visit(a.Indices[aI], a.Values[aI], default(T), ref context);
+                    aI++;
+                }
+
+                while (bI < b.Count)
+                {
+                    visitor.Visit(b.Indices[bI], default(T), b.Values[bI], ref context);
                     bI++;
                 }
             }

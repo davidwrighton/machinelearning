@@ -364,6 +364,11 @@ namespace Microsoft.ML.Runtime.Numeric
             return res;
         }
 
+        private struct AbsOfDifferenceSum : VBufferUtils.IForEachPairWithContextVisitor<Float, Float>
+        {
+            public void Visit(int index, Float val1, Float val2, ref Float res) { res += Math.Abs(val1 - val2); }
+        }
+
         /// <summary>
         /// Computes the L1 distance between two VBuffers
         /// </summary>
@@ -373,8 +378,7 @@ namespace Microsoft.ML.Runtime.Numeric
         public static Float L1Distance(ref VBuffer<Float> a, ref VBuffer<Float> b)
         {
             Float res = 0;
-            VBufferUtils.ForEachEitherDefined(ref a, ref b,
-                (slot, val1, val2) => res += Math.Abs(val1 - val2));
+            VBufferUtils.ForEachEitherDefinedWithContext(ref a, ref b, ref res, new AbsOfDifferenceSum());
             return res;
         }
 

@@ -42,6 +42,17 @@ namespace Microsoft.ML.Runtime.Numeric
             _l1weight = l1weight;
         }
 
+        private struct IfValueLessThanZeroCheckBiasSetZero : VBufferUtils.ISlotValueManipulator<Float>
+        {
+            private int _biasCount;
+            public IfValueLessThanZeroCheckBiasSetZero(int biasCount) { _biasCount = biasCount; }
+            public void Manipulate(int ind, ref Float v1)
+            {
+                if (v1 < 0 && ind >= _biasCount)
+                    v1 = 0;
+            }
+        }
+
         internal override OptimizerState MakeState(IChannel ch, IProgressChannelProvider progress, DifferentiableFunction function, ref VBuffer<Float> initial)
         {
             Contracts.AssertValue(ch);
@@ -49,11 +60,7 @@ namespace Microsoft.ML.Runtime.Numeric
 
             if (EnforceNonNegativity)
             {
-                VBufferUtils.Apply(ref initial, delegate(int ind, ref Float initialVal)
-                {
-                    if (initialVal < 0.0 && ind >= _biasCount)
-                        initialVal = 0;
-                });
+                VBufferUtils.Apply(ref initial, new IfValueLessThanZeroCheckBiasSetZero(_biasCount));
             }
 
             if (_l1weight > 0 && _biasCount < initial.Length)
@@ -191,19 +198,11 @@ namespace Microsoft.ML.Runtime.Numeric
                 if (!EnforceNonNegativity)
                 {
                     VBufferUtils.ApplyWith(ref _x, ref _newX,
-                        delegate(int ind, Float xVal, ref Float newXval)
-                        {
-                            if (xVal*newXval < 0.0 && ind >= _biasCount)
-                                newXval = 0;
-                        });
+                        new MulPairCompareBiasSetZero(_biasCount));
                 }
                 else
                 {
-                    VBufferUtils.Apply(ref _newX, delegate(int ind, ref Float newXval)
-                    {
-                        if (newXval < 0.0 && ind >= _biasCount)
-                            newXval = 0;
-                    });
+                    VBufferUtils.Apply(ref _newX, new IfValueLessThanZeroCheckBiasSetZero(_biasCount));
                 }
             }
 
@@ -212,6 +211,17 @@ namespace Microsoft.ML.Runtime.Numeric
                 MakeSteepestDescDir();
                 MapDirByInverseHessian();
                 FixDirZeros();
+            }
+
+            private struct MulPairCompareBiasSetZero : VBufferUtils.IPairManipulator<Float, Float>
+            {
+                private int _biasCount;
+                public MulPairCompareBiasSetZero(int biasCount) { _biasCount = biasCount; }
+                public void Manipulate(int ind, Float v1, ref Float v2)
+                {
+                    if (v1 * v2 < 0 && ind >= _biasCount)
+                        v2 = 0;
+                }
             }
 
             /// <summary>
@@ -235,11 +245,7 @@ namespace Microsoft.ML.Runtime.Numeric
                 if (unnormCos < 0)
                 {
                     VBufferUtils.ApplyWith(ref _steepestDescDir, ref _dir,
-                        (int ind, Float sdVal, ref Float dirVal) =>
-                        {
-                            if (sdVal * dirVal < 0 && ind >= _biasCount)
-                                dirVal = 0;
-                        });
+                        new MulPairCompareBiasSetZero(_biasCount));
 
                     GetNextPoint(alpha);
                     unnormCos = VectorUtils.DotProduct(ref _steepestDescDir, ref _newX) - VectorUtils.DotProduct(ref _steepestDescDir, ref _x);

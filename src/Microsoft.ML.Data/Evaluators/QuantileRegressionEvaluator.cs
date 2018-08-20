@@ -225,11 +225,17 @@ namespace Microsoft.ML.Runtime.Data
                 _slotNames = slotNames;
             }
 
+            private struct ApplyLossFunctionStruct : VBufferUtils.IPairManipulator<Float, Double>
+            {
+                private float _label;
+                private IRegressionLoss _lossFunction;
+                public ApplyLossFunctionStruct(IRegressionLoss lossFunction, float label) { _label = label; _lossFunction = lossFunction; }
+                public void Manipulate(int slot, Float src, ref Double dst) {  dst = _lossFunction.Loss(src, _label); }
+            }
+
             protected override void ApplyLossFunction(ref VBuffer<float> score, float label, ref VBuffer<Double> loss)
             {
-                VBufferUtils.PairManipulator<Float, Double> lossFn =
-                    (int slot, Float src, ref Double dst) => dst = LossFunction.Loss(src, label);
-                VBufferUtils.ApplyWith(ref score, ref loss, lossFn);
+                VBufferUtils.ApplyWith(ref score, ref loss, new ApplyLossFunctionStruct(LossFunction, label));
             }
 
             protected override bool IsNaN(ref VBuffer<Float> score)
@@ -367,6 +373,11 @@ namespace Microsoft.ML.Runtime.Data
                 };
         }
 
+        private struct SquareManipulator : VBufferUtils.IPairManipulator<Double, Double>
+        {
+            public void Manipulate(int slot, Double x, ref Double y) { y = x * x; }
+        }
+
         public override Delegate[] CreateGetters(IRow input, Func<int, bool> activeCols, out Action disposer)
         {
             Host.Assert(LabelIndex >= 0);
@@ -413,15 +424,12 @@ namespace Microsoft.ML.Runtime.Data
             }
             if (activeCols(L2Col))
             {
-                VBufferUtils.PairManipulator<Double, Double> sqr =
-                    (int slot, Double x, ref Double y) => y = x * x;
-
                 ValueGetter<VBuffer<Double>> l2Fn =
                     (ref VBuffer<Double> dst) =>
                     {
                         updateCacheIfNeeded();
                         dst = new VBuffer<Double>(_scoreSize, 0, dst.Values, dst.Indices);
-                        VBufferUtils.ApplyWith(ref l1, ref dst, sqr);
+                        VBufferUtils.ApplyWith(ref l1, ref dst, new SquareManipulator());
                     };
                 getters[L2Col] = l2Fn;
             }

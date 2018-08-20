@@ -738,6 +738,7 @@ namespace Microsoft.ML.Runtime.Internal.Utilities
             }
         }
 
+#if DELEGATE_BASED_VBUFFER_UTILS
         /// <summary>
         /// Applies the <paramref name="manip"/> to every explicitly defined
         /// element of the vector.
@@ -747,6 +748,7 @@ namespace Microsoft.ML.Runtime.Internal.Utilities
             Contracts.CheckValue(manip, nameof(manip));
             Apply(ref dst, new SlotValueDelegateManipulator<T>(manip));
         }
+#endif
 
         /// <summary>
         /// Applies the <paramref name="manip"/> to every explicitly defined
@@ -1050,6 +1052,7 @@ namespace Microsoft.ML.Runtime.Internal.Utilities
             public bool Value => false;
         }
 
+#if DELEGATE_BASED_VBUFFER_UTILS
         /// <summary>
         /// Applies the <see cref="PairManipulator{TSrc,TDst}"/> to each pair of elements
         /// where <paramref name="src"/> is defined, in order of index. If there is
@@ -1067,6 +1070,7 @@ namespace Microsoft.ML.Runtime.Internal.Utilities
             Contracts.CheckValue(manip, nameof(manip));
             ApplyWithCore(ref src, ref dst, new PairDelegateManipulator<TSrc, TDst>(manip), outer: new BoolFalse());
         }
+#endif
 
         /// <summary>
         /// Applies the <see cref="PairManipulator{TSrc,TDst}"/> to each pair of elements
@@ -1086,6 +1090,7 @@ namespace Microsoft.ML.Runtime.Internal.Utilities
             ApplyWithCore(ref src, ref dst, manip, outer: new BoolFalse());
         }
 
+#if DELEGATE_BASED_VBUFFER_UTILS
         /// <summary>
         /// Applies the <see cref="PairManipulator{TSrc,TDst}"/> to each pair of elements
         /// where <paramref name="src"/> is defined, in order of index. It stores the result
@@ -1105,6 +1110,7 @@ namespace Microsoft.ML.Runtime.Internal.Utilities
             Contracts.CheckValue(manip, nameof(manip));
             ApplyWithCoreCopy(ref src, ref dst, ref res, new PairDelegateManipulatorCopy<TSrc, TDst>(manip), outer: new BoolFalse());
         }
+#endif
 
         /// <summary>
         /// Applies the <see cref="PairManipulator{TSrc,TDst}"/> to each pair of elements

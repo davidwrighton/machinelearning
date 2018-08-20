@@ -129,6 +129,11 @@ namespace Microsoft.ML.Runtime.Numeric
             }
         }
 
+        private struct InplaceAdder : VBufferUtils.IPairManipulator<Float, Float>
+        {
+            public void Manipulate(int slot, Float v1, ref Float v2) { v2 += v1; }
+        }
+
         /// <summary>
         /// Perform in-place vector addition <c><paramref name="dst"/> += <paramref name="src"/></c>.
         /// </summary>
@@ -148,8 +153,16 @@ namespace Microsoft.ML.Runtime.Numeric
                 return;
             }
             // REVIEW: Should we use SSE for any of these possibilities?
-            VBufferUtils.ApplyWith(ref src, ref dst, (int i, Float v1, ref Float v2) => v2 += v1);
+            VBufferUtils.ApplyWith(ref src, ref dst, new InplaceAdder());
         }
+
+        private struct InplaceMultipleByConstantAndAccumulate : VBufferUtils.IPairManipulator<Float, Float>
+        {
+            private Float _c;
+            public InplaceMultipleByConstantAndAccumulate(Float c) { _c = c; }
+            public void Manipulate(int slot, Float v1, ref Float v2) { v2 += _c * v1; }
+        }
+
 
         // REVIEW: Rename all instances of AddMult to AddScale, as soon as convesion concerns are no more.
         /// <summary>
@@ -174,7 +187,14 @@ namespace Microsoft.ML.Runtime.Numeric
                 return;
             }
             // REVIEW: Should we use SSE for any of these possibilities?
-            VBufferUtils.ApplyWith(ref src, ref dst, (int i, Float v1, ref Float v2) => v2 += c * v1);
+            VBufferUtils.ApplyWith(ref src, ref dst, new InplaceMultipleByConstantAndAccumulate(c));
+        }
+
+        private struct MultipleByConstantAndAccumulate : VBufferUtils.IPairManipulatorCopy<Float, Float>
+        {
+            private Float _c;
+            public MultipleByConstantAndAccumulate(Float c) { _c = c; }
+            public void Manipulate(int slot, Float v1, Float v2, ref Float v3) { v3 = v2 + _c * v1; }
         }
 
         /// <summary>
@@ -202,7 +222,7 @@ namespace Microsoft.ML.Runtime.Numeric
                 return;
             }
 
-            VBufferUtils.ApplyWithCopy(ref src, ref dst, ref res, (int i, Float v1, Float v2, ref Float v3) => v3 = v2 + c * v1);
+            VBufferUtils.ApplyWithCopy(ref src, ref dst, ref res, new MultipleByConstantAndAccumulate(c));
         }
 
         /// <summary>

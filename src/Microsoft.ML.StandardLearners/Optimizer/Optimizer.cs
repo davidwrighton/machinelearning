@@ -375,6 +375,15 @@ namespace Microsoft.ML.Runtime.Numeric
                 GradientCalculations = 0;
             }
 
+            private struct ForceValueNonNegative : VBufferUtils.ISlotValueManipulator<Float>
+            {
+                public void Manipulate(int slot, ref Float v1)
+                {
+                    if (v1 < 0.0)
+                        v1 = 0;
+                }
+            }
+
             /// <summary>
             /// An implementation of the line search for the Wolfe conditions, from Nocedal &amp; Wright
             /// </summary>
@@ -405,11 +414,7 @@ namespace Microsoft.ML.Runtime.Numeric
                     VectorUtils.AddMultInto(ref _x, alpha, ref _dir, ref _newX);
                     if (EnforceNonNegativity)
                     {
-                        VBufferUtils.Apply(ref _newX, delegate(int ind, ref Float newXval)
-                        {
-                            if (newXval < 0.0)
-                                newXval = 0;
-                        });
+                        VBufferUtils.Apply(ref _newX, new ForceValueNonNegative());
                     }
 
                     Value = Eval(ref _newX, ref _newGrad);
@@ -486,11 +491,7 @@ namespace Microsoft.ML.Runtime.Numeric
                     VectorUtils.AddMultInto(ref _x, alpha, ref _dir, ref _newX);
                     if (EnforceNonNegativity)
                     {
-                        VBufferUtils.Apply(ref _newX, delegate(int ind, ref Float newXval)
-                        {
-                            if (newXval < 0.0)
-                                newXval = 0;
-                        });
+                        VBufferUtils.Apply(ref _newX, new ForceValueNonNegative());
                     }
 
                     Value = Eval(ref _newX, ref _newGrad);

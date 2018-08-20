@@ -618,6 +618,20 @@ namespace Microsoft.ML.Runtime.Data
             return _types[iinfo];
         }
 
+        private struct TfIdfManipulator : VBufferUtils.ISlotValueManipulator<Float>
+        {
+            private double[] _invDocFreqsSelected;
+            public TfIdfManipulator(double[] invDocFreqsSelected) { _invDocFreqsSelected = invDocFreqsSelected; }
+            public void Manipulate(int i, ref Float v) { v = (Float)(v * _invDocFreqsSelected[i]); }
+        }
+
+        private struct IdfManipulator : VBufferUtils.ISlotValueManipulator<Float>
+        {
+            private double[] _invDocFreqsSelected;
+            public IdfManipulator(double[] invDocFreqsSelected) { _invDocFreqsSelected = invDocFreqsSelected; }
+            public void Manipulate(int i, ref Float v) { v = v >= 1 ? (Float)_invDocFreqsSelected[i] : 0; }
+        }
+
         protected override Delegate GetGetterCore(IChannel ch, IRow input, int iinfo, out Action disposer)
         {
             Host.AssertValueOrNull(ch);
@@ -650,7 +664,7 @@ namespace Microsoft.ML.Runtime.Data
                                 bldr.Reset();
                                 bldr.AddNgrams(ref src, 0, keyCount);
                                 bldr.GetResult(ref dst);
-                                VBufferUtils.Apply(ref dst, (int i, ref Float v) => v = (Float)(v * _invDocFreqs[iinfo][i]));
+                                VBufferUtils.Apply(ref dst, new TfIdfManipulator(_invDocFreqs[iinfo]));
                             }
                             else
                                 dst = new VBuffer<Float>(0, dst.Values, dst.Indices);
@@ -667,7 +681,7 @@ namespace Microsoft.ML.Runtime.Data
                                 bldr.Reset();
                                 bldr.AddNgrams(ref src, 0, keyCount);
                                 bldr.GetResult(ref dst);
-                                VBufferUtils.Apply(ref dst, (int i, ref Float v) => v = v >= 1 ? (Float)_invDocFreqs[iinfo][i] : 0);
+                                VBufferUtils.Apply(ref dst, new IdfManipulator(_invDocFreqs[iinfo]));
                             }
                             else
                                 dst = new VBuffer<Float>(0, dst.Values, dst.Indices);

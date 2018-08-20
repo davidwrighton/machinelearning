@@ -1132,6 +1132,7 @@ namespace Microsoft.ML.Runtime.Internal.Utilities
             ApplyWithCoreCopy(ref src, ref dst, ref res, manip, outer: new BoolFalse());
         }
 
+#if DELEGATE_BASED_VBUFFER_UTILS
         /// <summary>
         /// Applies the <see cref="PairManipulator{TSrc,TDst}"/> to each pair of elements
         /// where either <paramref name="src"/> or <paramref name="dst"/>, has an element
@@ -1148,6 +1149,7 @@ namespace Microsoft.ML.Runtime.Internal.Utilities
             Contracts.CheckValue(manip, nameof(manip));
             ApplyWithCore(ref src, ref dst, new PairDelegateManipulator<TSrc, TDst>(manip), outer: new BoolTrue());
         }
+#endif
 
         /// <summary>
         /// Applies the <see cref="PairManipulator{TSrc,TDst}"/> to each pair of elements
@@ -1166,6 +1168,7 @@ namespace Microsoft.ML.Runtime.Internal.Utilities
             ApplyWithCore(ref src, ref dst, manip, outer: new BoolTrue());
         }
 
+#if DELEGATE_BASED_VBUFFER_UTILS
         /// <summary>
         /// Applies the <see cref="PairManipulator{TSrc,TDst}"/> to each pair of elements
         /// where either <paramref name="src"/> or <paramref name="dst"/>, has an element
@@ -1183,6 +1186,7 @@ namespace Microsoft.ML.Runtime.Internal.Utilities
             Contracts.CheckValue(manip, nameof(manip));
             ApplyWithCoreCopy(ref src, ref dst, ref res, new PairDelegateManipulatorCopy<TSrc, TDst>(manip), outer: new BoolTrue());
         }
+#endif
 
         /// <summary>
         /// Applies the <see cref="PairManipulator{TSrc,TDst}"/> to each pair of elements
@@ -1203,9 +1207,8 @@ namespace Microsoft.ML.Runtime.Internal.Utilities
         }
 
         /// <summary>
-        /// The actual implementation of <see cref="VBufferUtils.ApplyWith{TSrc, TDst}"/>,
-        /// <see cref="VBufferUtils.ApplyWith{TSrc, TDst, TPairManipulator}"/>,
-        /// <see cref="ApplyWithEitherDefined{TSrc,TDst}"/> and
+        /// The actual implementation of
+        /// <see cref="VBufferUtils.ApplyWith{TSrc, TDst, TPairManipulator}"/>, and
         /// <see cref="ApplyWithEitherDefined{TSrc,TDst, TPairManipulator}"/>, that has
         /// internal branches on the implementation where necessary depending on whether
         /// this is an inner or outer join of the indices of <paramref name="src"/> on
@@ -1479,9 +1482,8 @@ namespace Microsoft.ML.Runtime.Internal.Utilities
         }
 
         /// <summary>
-        /// The actual implementation of <see cref="VBufferUtils.ApplyWithCopy{TSrc, TDst}"/>,
-        /// <see cref="VBufferUtils.ApplyWithCopy{TSrc, TDst, TPairManipulator}"/>,
-        /// <see cref="ApplyWithEitherDefinedCopy{TSrc,TDst}"/> and
+        /// The actual implementation of
+        /// <see cref="VBufferUtils.ApplyWithCopy{TSrc, TDst, TPairManipulator}"/>, and
         /// <see cref="ApplyWithEitherDefinedCopy{TSrc,TDst, TPairManipulator}"/>, that has internal
         /// branches on the implementation where necessary depending on whether this is an inner or outer join of the
         /// indices of <paramref name="src"/> on <paramref name="dst"/>.
@@ -1726,11 +1728,11 @@ namespace Microsoft.ML.Runtime.Internal.Utilities
         /// storing the result in <paramref name="dst"/>, overwriting any of its existing contents.
         /// The contents of <paramref name="dst"/> do not affect calculation. If you instead wish
         /// to calculate a function that reads and writes <paramref name="dst"/>, see
-        /// <see cref="ApplyWith{TSrc,TDst}"/> and <see cref="ApplyWithEitherDefined{TSrc,TDst}"/>. Post-operation,
+        /// <see cref="ApplyWith{TSrc,TDst,TPairManipulator}"/> and <see cref="ApplyWithEitherDefined{TSrc,TDst,TPairManipulator}"/>. Post-operation,
         /// <paramref name="dst"/> will be dense iff <paramref name="src"/> is dense.
         /// </summary>
-        /// <seealso cref="ApplyWith{TSrc,TDst}"/>
-        /// <seealso cref="ApplyWithEitherDefined{TSrc,TDst}"/>
+        /// <seealso cref="ApplyWith{TSrc,TDst,TPairManipulator}"/>
+        /// <seealso cref="ApplyWithEitherDefined{TSrc,TDst,TPairManipulator}"/>
         public static void ApplyIntoEitherDefined<TSrc, TDst>(ref VBuffer<TSrc> src, ref VBuffer<TDst> dst, Func<int, TSrc, TDst> func)
         {
             Contracts.CheckValue(func, nameof(func));

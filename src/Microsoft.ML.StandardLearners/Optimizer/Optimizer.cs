@@ -291,14 +291,17 @@ namespace Microsoft.ML.Runtime.Numeric
                 Array.Clear(_yList, 0, _yList.Length);
             }
 
+            private struct FixDirZeroManipulator : VBufferUtils.IPairManipulator<Float, Float>
+            {
+                public void Manipulate(int slot, Float v1, ref Float v2)
+                {
+                    if (v1 == 0)
+                        v2 = 0;
+                }
+            }
             protected void FixDirZeros()
             {
-                VBufferUtils.ApplyWithEitherDefined(ref _steepestDescDir, ref _dir,
-                    (int i, Float sdVal, ref Float dirVal) =>
-                    {
-                        if (sdVal == 0)
-                            dirVal = 0;
-                    });
+                VBufferUtils.ApplyWithEitherDefined(ref _steepestDescDir, ref _dir, new FixDirZeroManipulator());
             }
 
             internal virtual void UpdateDir()

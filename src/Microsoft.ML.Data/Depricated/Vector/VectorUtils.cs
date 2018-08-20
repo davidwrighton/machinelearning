@@ -151,6 +151,14 @@ namespace Microsoft.ML.Runtime.Numeric
             a = new VBuffer<float>(a.Length, newCount, a.Values, indices);
         }
 
+        private struct MulManipulator : VBufferUtils.IPairManipulator<Float, Float>
+        {
+            public void Manipulate(int slot, Float v1, ref Float v2)
+            {
+                v2 *= v1;
+            }
+        }
+
         /// <summary>
         /// Multiplies arrays Dst *= A element by element and returns the result in <paramref name="dst"/> (Hadamard product).
         /// </summary>
@@ -161,7 +169,7 @@ namespace Microsoft.ML.Runtime.Numeric
             if (a.IsDense && dst.IsDense)
                 CpuMathUtils.MulElementWise(a.Values, dst.Values, dst.Values, a.Length);
             else
-                VBufferUtils.ApplyWithEitherDefined(ref a, ref dst, (int ind, Float v1, ref Float v2) => { v2 *= v1; });
+                VBufferUtils.ApplyWithEitherDefined(ref a, ref dst, new MulManipulator());
         }
 
         private static Float L2DistSquaredSparse(Float[] valuesA, int[] indicesA, int countA, Float[] valuesB, int[] indicesB, int countB, int length)

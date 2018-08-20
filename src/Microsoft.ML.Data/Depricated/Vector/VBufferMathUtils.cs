@@ -163,7 +163,6 @@ namespace Microsoft.ML.Runtime.Numeric
             public void Manipulate(int slot, Float v1, ref Float v2) { v2 += _c * v1; }
         }
 
-
         // REVIEW: Rename all instances of AddMult to AddScale, as soon as convesion concerns are no more.
         /// <summary>
         /// Perform in-place scaled vector addition

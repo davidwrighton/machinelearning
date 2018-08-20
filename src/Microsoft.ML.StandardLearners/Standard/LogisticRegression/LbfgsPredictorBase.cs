@@ -505,6 +505,24 @@ namespace Microsoft.ML.Runtime.Learners
         protected abstract void ComputeTrainingStatistics(IChannel ch, FloatLabelCursor.Factory cursorFactory, Float loss, int numParams);
 
         protected abstract void ProcessPriorDistribution(Float label, Float weight);
+
+        private struct CheckBiasApplyL2WeightManipulator : VBufferUtils.IPairManipulator<Float, Float>
+        {
+            private int _biasCount;
+            private float _l2Weight;
+            public CheckBiasApplyL2WeightManipulator(int biasCount, float l2Weight)
+            {
+                _biasCount = biasCount;
+                _l2Weight = l2Weight;
+            }
+
+            public void Manipulate(int ind, Float v1, ref Float v2)
+            {
+                if (ind >= _biasCount)
+                    v2 += _l2Weight * v1;
+            }
+        }
+
         /// <summary>
         /// The gradient being used by the optimizer
         /// </summary>
@@ -548,7 +566,7 @@ namespace Microsoft.ML.Runtime.Learners
 
                 // Here we probably want to use sparse x
                 VBufferUtils.ApplyWithEitherDefined(ref x, ref gradient,
-                    (int ind, Float v1, ref Float v2) => { if (ind >= BiasCount) v2 += L2Weight * v1; });
+                    new CheckBiasApplyL2WeightManipulator(BiasCount, L2Weight));
             }
             VectorUtils.ScaleBy(ref gradient, scaleFactor);
 

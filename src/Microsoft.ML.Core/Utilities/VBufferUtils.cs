@@ -248,7 +248,7 @@ namespace Microsoft.ML.Runtime.Internal.Utilities
                     visitor.Visit(i, a.Values[i], ref context);
                 }
             }
-            else
+            else if (localA.Count > 0)
             {
                 int[] indicesA = localA.Indices;
 

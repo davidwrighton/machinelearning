@@ -446,7 +446,7 @@ namespace Microsoft.ML.Runtime.Learners
 
         }
 
-        private TPredictor TrainCoreDualsChosen<TDualsTable>(IChannel ch,
+        private TModel TrainCoreDualsChosen<TDualsTable>(IChannel ch,
                                                              RoleMappedData data,
                                                              LinearPredictor predictor,
                                                              int weightSetCount,

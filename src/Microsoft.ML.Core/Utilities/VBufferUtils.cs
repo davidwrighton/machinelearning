@@ -2,6 +2,7 @@
 // The .NET Foundation licenses this file to you under the MIT license.
 // See the LICENSE file in the project root for more information.
 
+#define DELEGATE_BASED_VBUFFER_UTILS
 using System;
 using System.Collections.Generic;
 using Microsoft.ML.Runtime.Data;
@@ -260,33 +261,44 @@ namespace Microsoft.ML.Runtime.Internal.Utilities
             }
         }
 
-        public interface IForEachPairVisitor<T>
-        {
-            void Visit(int index, T value, T value2);
-        }
-
-        public interface IForEachPairShortcuttingVisitor<T>
+        public interface IPairVisitor<T>
         {
             bool Visit(int index, T value, T value2);
         }
 
-        public interface IForEachPairWithContextVisitor<T, TContext>
+        public interface IPairVisitor<T, TContext>
         {
-            void Visit(int index, T value, T value2, ref TContext context);
+            bool Visit(int index, T value, T value2, ref TContext context);
         }
 
-        private struct ForEachPairDelegateVisitor<T> : IForEachPairVisitor<T>
+        private struct PairDelegateVisitor<T> : IPairVisitor<T>
         {
-            public ForEachPairDelegateVisitor(Action<int, T, T> visitor)
+            public PairDelegateVisitor(Action<int, T, T> visitor)
             {
                 _visitor = visitor;
             }
 
             private readonly Action<int, T, T> _visitor;
 
-            public void Visit(int index, T value, T value2)
+            public bool Visit(int index, T value, T value2)
             {
                 _visitor(index, value, value2);
+                return true;
+            }
+        }
+
+        private struct NonContextPairVisitor<T, TVisitor> : IPairVisitor<T, IntPtr> where TVisitor : struct, IPairVisitor<T>
+        {
+            public NonContextPairVisitor(TVisitor visitor)
+            {
+                _visitor = visitor;
+            }
+
+            private TVisitor _visitor;
+
+            public bool Visit(int index, T value, T value2, ref IntPtr dummyvalue)
+            {
+                return _visitor.Visit(index, value, value2);
             }
         }
 
@@ -304,7 +316,7 @@ namespace Microsoft.ML.Runtime.Internal.Utilities
         public static void ForEachBothDefined<T>(ref VBuffer<T> a, ref VBuffer<T> b, Action<int, T, T> visitor)
         {
             Contracts.CheckValue(visitor, nameof(visitor));
-            ForEachBothDefined(ref a, ref b, new ForEachPairDelegateVisitor<T>(visitor));
+            ForEachBothDefined(ref a, ref b, new PairDelegateVisitor<T>(visitor));
         }
 #endif
 
@@ -317,52 +329,12 @@ namespace Microsoft.ML.Runtime.Internal.Utilities
         /// <param name="a">The first vector</param>
         /// <param name="b">The second vector</param>
         /// <param name="visitor">Operation to apply to each pair of non-zero values.
-        /// This is passed the index, and two values</param>
-        public static void ForEachBothDefined<T, TVisitor>(ref VBuffer<T> a, ref VBuffer<T> b, TVisitor visitor) where TVisitor : struct, IForEachPairVisitor<T>
+        /// This is passed the index, and two values, If the visitor returns false, shortcut and return false, otherwise return true</param>
+        public static bool ForEachBothDefined<T, TVisitor>(ref VBuffer<T> a, ref VBuffer<T> b, TVisitor visitor) where TVisitor : struct, IPairVisitor<T>
         {
-            // Make local copies so jit can see the VBuffer fields aren't modified
-            VBuffer<T> localA = a;
-            VBuffer<T> localB = b;
+            IntPtr dummyValue = default(IntPtr);
 
-            T[] dataA = localA.Values;
-            T[] dataB = localB.Values;
-
-            Contracts.Check(a.Length == b.Length, "Vectors must have the same dimensionality.");
-
-            if (a.IsDense && b.IsDense)
-            {
-                for (int i = 0; i < a.Length; i++)
-                    visitor.Visit(i, dataA[i], dataB[i]);
-            }
-            else if (b.IsDense)
-            {
-                int[] indicesA = a.Indices;
-                for (int i = 0; i < a.Count; i++)
-                    visitor.Visit(indicesA[i], dataA[i], dataB[indicesA[i]]);
-            }
-            else if (a.IsDense)
-            {
-                int[] indicesB = b.Indices;
-                for (int i = 0; i < b.Count; i++)
-                    visitor.Visit(indicesB[i], dataA[indicesB[i]], dataB[i]);
-            }
-            else
-            {
-                // Both sparse.
-                int aI = 0;
-                int bI = 0;
-                while (aI < a.Count && bI < b.Count)
-                {
-                    int i = a.Indices[aI];
-                    int j = b.Indices[bI];
-                    if (i == j)
-                        visitor.Visit(i, dataA[aI++], dataB[bI++]);
-                    else if (i < j)
-                        aI++;
-                    else
-                        bI++;
-                }
-            }
+            return ForEachBothDefined(ref a, ref b, ref dummyValue, new NonContextPairVisitor<T, TVisitor>(visitor));
         }
 
         /// <summary>
@@ -376,7 +348,7 @@ namespace Microsoft.ML.Runtime.Internal.Utilities
         /// <param name="context">The context passed by reference at each visit operation</param>
         /// <param name="visitor">Operation to apply to each pair of non-zero values.
         /// This is passed the index, and two values</param>
-        public static void ForEachBothDefinedWithContext<T, TContext, TVisitor>(ref VBuffer<T> a, ref VBuffer<T> b, ref TContext context, TVisitor visitor) where TVisitor : struct, IForEachPairWithContextVisitor<T, TContext>
+        public static bool ForEachBothDefined<T, TContext, TVisitor>(ref VBuffer<T> a, ref VBuffer<T> b, ref TContext context, TVisitor visitor) where TVisitor : struct, IPairVisitor<T, TContext>
         {
             // Make local copies so jit can see the VBuffer fields aren't modified
             VBuffer<T> localA = a;
@@ -390,19 +362,28 @@ namespace Microsoft.ML.Runtime.Internal.Utilities
             if (a.IsDense && b.IsDense)
             {
                 for (int i = 0; i < a.Length; i++)
-                    visitor.Visit(i, dataA[i], dataB[i], ref context);
+                {
+                    if (!visitor.Visit(i, dataA[i], dataB[i], ref context))
+                        return false;
+                }
             }
             else if (b.IsDense)
             {
                 int[] indicesA = a.Indices;
                 for (int i = 0; i < a.Count; i++)
-                    visitor.Visit(indicesA[i], dataA[i], dataB[indicesA[i]], ref context);
+                {
+                    if (!visitor.Visit(indicesA[i], dataA[i], dataB[indicesA[i]], ref context))
+                        return false;
+                }
             }
             else if (a.IsDense)
             {
                 int[] indicesB = b.Indices;
                 for (int i = 0; i < b.Count; i++)
-                    visitor.Visit(indicesB[i], dataA[indicesB[i]], dataB[i], ref context);
+                {
+                    if (!visitor.Visit(indicesB[i], dataA[indicesB[i]], dataB[i], ref context))
+                        return false;
+                }
             }
             else
             {
@@ -414,13 +395,18 @@ namespace Microsoft.ML.Runtime.Internal.Utilities
                     int i = a.Indices[aI];
                     int j = b.Indices[bI];
                     if (i == j)
-                        visitor.Visit(i, dataA[aI++], dataB[bI++], ref context);
+                    {
+                        if (!visitor.Visit(i, dataA[aI++], dataB[bI++], ref context))
+                            return false;
+                    }
                     else if (i < j)
                         aI++;
                     else
                         bI++;
                 }
             }
+
+            return true;
         }
 
 #if DELEGATE_BASED_VBUFFER_UTILS
@@ -433,82 +419,9 @@ namespace Microsoft.ML.Runtime.Internal.Utilities
         public static void ForEachEitherDefined<T>(ref VBuffer<T> a, ref VBuffer<T> b, Action<int, T, T> visitor)
         {
             Contracts.CheckValue(visitor, nameof(visitor));
-            ForEachEitherDefined(ref a, ref b, new ForEachPairDelegateVisitor<T>(visitor));
+            ForEachEitherDefined(ref a, ref b, new PairDelegateVisitor<T>(visitor));
         }
 #endif
-
-        /// <summary>
-        /// Applies the ParallelVisitor to each corresponding pair of elements where at least one is non-zero, in order of index.
-        /// </summary>
-        /// <param name="a">a vector</param>
-        /// <param name="b">another vector</param>
-        /// <param name="visitor">Function to apply to each pair of non-zero values - passed the index, and two values</param>
-        public static void ForEachEitherDefined<T, TVisitor>(ref VBuffer<T> a, ref VBuffer<T> b, TVisitor visitor) where TVisitor : struct, IForEachPairVisitor<T>
-        {
-            Contracts.Check(a.Length == b.Length, "Vectors must have the same dimensionality.");
-
-            if (a.IsDense && b.IsDense)
-            {
-                for (int i = 0; i < a.Length; ++i)
-                    visitor.Visit(i, a.Values[i], b.Values[i]);
-            }
-            else if (b.IsDense)
-            {
-                int aI = 0;
-                for (int i = 0; i < b.Length; i++)
-                {
-                    T aVal = (aI < a.Count && i == a.Indices[aI]) ? a.Values[aI++] : default(T);
-                    visitor.Visit(i, aVal, b.Values[i]);
-                }
-            }
-            else if (a.IsDense)
-            {
-                int bI = 0;
-                for (int i = 0; i < a.Length; i++)
-                {
-                    T bVal = (bI < b.Count && i == b.Indices[bI]) ? b.Values[bI++] : default(T);
-                    visitor.Visit(i, a.Values[i], bVal);
-                }
-            }
-            else
-            {
-                // Both sparse
-                int aI = 0;
-                int bI = 0;
-                while (aI < a.Count && bI < b.Count)
-                {
-                    int diff = a.Indices[aI] - b.Indices[bI];
-                    if (diff == 0)
-                    {
-                        visitor.Visit(b.Indices[bI], a.Values[aI], b.Values[bI]);
-                        aI++;
-                        bI++;
-                    }
-                    else if (diff < 0)
-                    {
-                        visitor.Visit(a.Indices[aI], a.Values[aI], default(T));
-                        aI++;
-                    }
-                    else
-                    {
-                        visitor.Visit(b.Indices[bI], default(T), b.Values[bI]);
-                        bI++;
-                    }
-                }
-
-                while (aI < a.Count)
-                {
-                    visitor.Visit(a.Indices[aI], a.Values[aI], default(T));
-                    aI++;
-                }
-
-                while (bI < b.Count)
-                {
-                    visitor.Visit(b.Indices[bI], default(T), b.Values[bI]);
-                    bI++;
-                }
-            }
-        }
 
         /// <summary>
         /// Applies the ParallelVisitor to each corresponding pair of elements where at least one is non-zero, in order of index. If any Visit operation returns false, then the function will return false otherwise it will return true.
@@ -516,83 +429,11 @@ namespace Microsoft.ML.Runtime.Internal.Utilities
         /// <param name="a">a vector</param>
         /// <param name="b">another vector</param>
         /// <param name="visitor">Function to apply to each pair of non-zero values - passed the index, and two values</param>
-        public static bool ForEachEitherDefinedShortcutting<T, TVisitor>(ref VBuffer<T> a, ref VBuffer<T> b, TVisitor visitor) where TVisitor : struct, IForEachPairShortcuttingVisitor<T>
+        public static bool ForEachEitherDefined<T, TVisitor>(ref VBuffer<T> a, ref VBuffer<T> b, TVisitor visitor) where TVisitor : struct, IPairVisitor<T>
         {
-            Contracts.Check(a.Length == b.Length, "Vectors must have the same dimensionality.");
+            IntPtr dummyValue = default(IntPtr);
 
-            if (a.IsDense && b.IsDense)
-            {
-                for (int i = 0; i < a.Length; ++i)
-                {
-                    if (!visitor.Visit(i, a.Values[i], b.Values[i]))
-                        return false;
-                }
-            }
-            else if (b.IsDense)
-            {
-                int aI = 0;
-                for (int i = 0; i < b.Length; i++)
-                {
-                    T aVal = (aI < a.Count && i == a.Indices[aI]) ? a.Values[aI++] : default(T);
-                    if (!visitor.Visit(i, aVal, b.Values[i]))
-                        return false;
-                }
-            }
-            else if (a.IsDense)
-            {
-                int bI = 0;
-                for (int i = 0; i < a.Length; i++)
-                {
-                    T bVal = (bI < b.Count && i == b.Indices[bI]) ? b.Values[bI++] : default(T);
-                    if (!visitor.Visit(i, a.Values[i], bVal))
-                        return false;
-                }
-            }
-            else
-            {
-                // Both sparse
-                int aI = 0;
-                int bI = 0;
-                while (aI < a.Count && bI < b.Count)
-                {
-                    int diff = a.Indices[aI] - b.Indices[bI];
-                    if (diff == 0)
-                    {
-                        if (!visitor.Visit(b.Indices[bI], a.Values[aI], b.Values[bI]))
-                            return false;
-                        aI++;
-                        bI++;
-                    }
-                    else if (diff < 0)
-                    {
-                        if (!visitor.Visit(a.Indices[aI], a.Values[aI], default(T)))
-                            return false;
-                        aI++;
-                    }
-                    else
-                    {
-                        if (!visitor.Visit(b.Indices[bI], default(T), b.Values[bI]))
-                            return false;
-                        bI++;
-                    }
-                }
-
-                while (aI < a.Count)
-                {
-                    if (!visitor.Visit(a.Indices[aI], a.Values[aI], default(T)))
-                        return false;
-                    aI++;
-                }
-
-                while (bI < b.Count)
-                {
-                    if (!visitor.Visit(b.Indices[bI], default(T), b.Values[bI]))
-                        return false;
-                    bI++;
-                }
-            }
-
-            return true;
+            return ForEachEitherDefined(ref a, ref b, ref dummyValue, new NonContextPairVisitor<T, TVisitor>(visitor));
         }
 
         /// <summary>
@@ -601,15 +442,18 @@ namespace Microsoft.ML.Runtime.Internal.Utilities
         /// <param name="a">a vector</param>
         /// <param name="b">another vector</param>
         /// <param name="context">The context passed by reference at each visit operation</param>
-        /// <param name="visitor">Function to apply to each pair of non-zero values - passed the index, and two values</param>
-        public static void ForEachEitherDefinedWithContext<T, TContext, TVisitor>(ref VBuffer<T> a, ref VBuffer<T> b, ref TContext context, TVisitor visitor) where TVisitor : struct, IForEachPairWithContextVisitor<T, TContext>
+        /// <param name="visitor">Function to apply to each pair of non-zero values - passed the index, and two values. If this function returns false, then the entire function will return false</param>
+        public static bool ForEachEitherDefined<T, TContext, TVisitor>(ref VBuffer<T> a, ref VBuffer<T> b, ref TContext context, TVisitor visitor) where TVisitor : struct, IPairVisitor<T, TContext>
         {
             Contracts.Check(a.Length == b.Length, "Vectors must have the same dimensionality.");
 
             if (a.IsDense && b.IsDense)
             {
                 for (int i = 0; i < a.Length; ++i)
-                    visitor.Visit(i, a.Values[i], b.Values[i], ref context);
+                {
+                    if (!visitor.Visit(i, a.Values[i], b.Values[i], ref context))
+                        return false;
+                }
             }
             else if (b.IsDense)
             {
@@ -617,7 +461,8 @@ namespace Microsoft.ML.Runtime.Internal.Utilities
                 for (int i = 0; i < b.Length; i++)
                 {
                     T aVal = (aI < a.Count && i == a.Indices[aI]) ? a.Values[aI++] : default(T);
-                    visitor.Visit(i, aVal, b.Values[i], ref context);
+                    if (!visitor.Visit(i, aVal, b.Values[i], ref context))
+                        return false;
                 }
             }
             else if (a.IsDense)
@@ -626,7 +471,8 @@ namespace Microsoft.ML.Runtime.Internal.Utilities
                 for (int i = 0; i < a.Length; i++)
                 {
                     T bVal = (bI < b.Count && i == b.Indices[bI]) ? b.Values[bI++] : default(T);
-                    visitor.Visit(i, a.Values[i], bVal, ref context);
+                    if (!visitor.Visit(i, a.Values[i], bVal, ref context))
+                        return false;
                 }
             }
             else
@@ -639,34 +485,41 @@ namespace Microsoft.ML.Runtime.Internal.Utilities
                     int diff = a.Indices[aI] - b.Indices[bI];
                     if (diff == 0)
                     {
-                        visitor.Visit(b.Indices[bI], a.Values[aI], b.Values[bI], ref context);
+                        if (!visitor.Visit(b.Indices[bI], a.Values[aI], b.Values[bI], ref context))
+                            return false;
                         aI++;
                         bI++;
                     }
                     else if (diff < 0)
                     {
-                        visitor.Visit(a.Indices[aI], a.Values[aI], default(T), ref context);
+                        if (!visitor.Visit(a.Indices[aI], a.Values[aI], default(T), ref context))
+                            return false;
                         aI++;
                     }
                     else
                     {
-                        visitor.Visit(b.Indices[bI], default(T), b.Values[bI], ref context);
+                        if (!visitor.Visit(b.Indices[bI], default(T), b.Values[bI], ref context))
+                            return false;
                         bI++;
                     }
                 }
 
                 while (aI < a.Count)
                 {
-                    visitor.Visit(a.Indices[aI], a.Values[aI], default(T), ref context);
+                    if (!visitor.Visit(a.Indices[aI], a.Values[aI], default(T), ref context))
+                        return false;
                     aI++;
                 }
 
                 while (bI < b.Count)
                 {
-                    visitor.Visit(b.Indices[bI], default(T), b.Values[bI], ref context);
+                    if (!visitor.Visit(b.Indices[bI], default(T), b.Values[bI], ref context))
+                        return false;
                     bI++;
                 }
             }
+
+            return true;
         }
 
         /// <summary>
@@ -1723,6 +1576,47 @@ namespace Microsoft.ML.Runtime.Internal.Utilities
             }
         }
 
+        public interface IDstProducingVisitor<TSrc, TDst>
+        {
+            TDst Visit(int index, TSrc value);
+        }
+
+        public interface IDstProducingVisitor<TSrc, TDst, TContext>
+        {
+            TDst Visit(int index, TSrc value, ref TContext context);
+        }
+
+        private struct DstProducingDelegateVisitor<TSrc, TDst> : IDstProducingVisitor<TSrc, TDst>
+        {
+            public DstProducingDelegateVisitor(Func<int, TSrc, TDst> visitor)
+            {
+                _visitor = visitor;
+            }
+
+            private readonly Func<int, TSrc, TDst> _visitor;
+
+            public TDst Visit(int index, TSrc value)
+            {
+                return _visitor(index, value);
+            }
+        }
+
+        private struct NonContextDstProducingVisitor<TSrc, TDst, TVisitor> : IDstProducingVisitor<TSrc, TDst, IntPtr> where TVisitor : struct, IDstProducingVisitor<TSrc, TDst>
+        {
+            public NonContextDstProducingVisitor(TVisitor visitor)
+            {
+                _visitor = visitor;
+            }
+
+            private TVisitor _visitor;
+
+            public TDst Visit(int index, TSrc value, ref IntPtr dummyvalue)
+            {
+                return _visitor.Visit(index, value);
+            }
+        }
+
+#if DELEGATE_BASED_VBUFFER_UTILS
         /// <summary>
         /// Applies a function to explicitly defined elements in a vector <paramref name="src"/>,
         /// storing the result in <paramref name="dst"/>, overwriting any of its existing contents.
@@ -1736,7 +1630,19 @@ namespace Microsoft.ML.Runtime.Internal.Utilities
         public static void ApplyIntoEitherDefined<TSrc, TDst>(ref VBuffer<TSrc> src, ref VBuffer<TDst> dst, Func<int, TSrc, TDst> func)
         {
             Contracts.CheckValue(func, nameof(func));
+            ApplyIntoEitherDefined(ref src, ref dst, new DstProducingDelegateVisitor<TSrc, TDst>(func));
+        }
+#endif
 
+        public static void ApplyIntoEitherDefined<TSrc, TDst, TVisitor>(ref VBuffer<TSrc> src, ref VBuffer<TDst> dst, TVisitor visitor) where TVisitor : struct, IDstProducingVisitor<TSrc, TDst>
+        {
+            IntPtr dummyValue = default(IntPtr);
+
+            ApplyIntoEitherDefined(ref src, ref dst, ref dummyValue, new NonContextDstProducingVisitor<TSrc, TDst, TVisitor>(visitor));
+        }
+
+        public static void ApplyIntoEitherDefined<TSrc, TDst, TContext, TVisitor>(ref VBuffer<TSrc> src, ref VBuffer<TDst> dst, ref TContext context, TVisitor visitor) where TVisitor : struct, IDstProducingVisitor<TSrc, TDst, TContext>
+        {
             // REVIEW: The analogous WritableVector method insisted on
             // equal lengths, but I don't care here.
             if (src.Count == 0)
@@ -1750,18 +1656,59 @@ namespace Microsoft.ML.Runtime.Internal.Utilities
             if (src.IsDense)
             {
                 for (int i = 0; i < src.Length; ++i)
-                    values[i] = func(i, src.Values[i]);
+                    values[i] = visitor.Visit(i, src.Values[i], ref context);
             }
             else
             {
                 Utils.EnsureSize(ref indices, src.Count, src.Length, keepOld: false);
                 Array.Copy(src.Indices, indices, src.Count);
                 for (int i = 0; i < src.Count; ++i)
-                    values[i] = func(src.Indices[i], src.Values[i]);
+                    values[i] = visitor.Visit(src.Indices[i], src.Values[i], ref context);
             }
             dst = new VBuffer<TDst>(src.Length, src.Count, values, indices);
         }
 
+        public interface IDstProducingPairVisitor<TSrc1, TSrc2, TDst>
+        {
+            TDst Visit(int index, TSrc1 value, TSrc2 value2);
+        }
+
+        public interface IDstProducingPairVisitor<TSrc1, TSrc2, TDst, TContext>
+        {
+            TDst Visit(int index, TSrc1 value, TSrc2 value2, ref TContext context);
+        }
+
+        private struct DstProducingPairDelegateVisitor<TSrc1, TSrc2, TDst> : IDstProducingPairVisitor<TSrc1, TSrc2, TDst>
+        {
+            public DstProducingPairDelegateVisitor(Func<int, TSrc1, TSrc2, TDst> visitor)
+            {
+                _visitor = visitor;
+            }
+
+            private readonly Func<int, TSrc1, TSrc2, TDst> _visitor;
+
+            public TDst Visit(int index, TSrc1 value, TSrc2 value2)
+            {
+                return _visitor(index, value, value2);
+            }
+        }
+
+        private struct NonContextDstProducingPairVisitor<TSrc1, TSrc2, TDst, TVisitor> : IDstProducingPairVisitor<TSrc1, TSrc2, TDst, IntPtr> where TVisitor : struct, IDstProducingPairVisitor<TSrc1, TSrc2, TDst>
+        {
+            public NonContextDstProducingPairVisitor(TVisitor visitor)
+            {
+                _visitor = visitor;
+            }
+
+            private TVisitor _visitor;
+
+            public TDst Visit(int index, TSrc1 value, TSrc2 value2, ref IntPtr dummyvalue)
+            {
+                return _visitor.Visit(index, value, value2);
+            }
+        }
+
+#if DELEGATE_BASED_VBUFFER_UTILS
         /// <summary>
         /// Applies a function <paramref name="func"/> to two vectors, storing the result in
         /// <paramref name="dst"/>, whose existing contents are discarded and overwritten. The
@@ -1772,8 +1719,21 @@ namespace Microsoft.ML.Runtime.Internal.Utilities
         /// </summary>
         public static void ApplyInto<TSrc1, TSrc2, TDst>(ref VBuffer<TSrc1> a, ref VBuffer<TSrc2> b, ref VBuffer<TDst> dst, Func<int, TSrc1, TSrc2, TDst> func)
         {
-            Contracts.Check(a.Length == b.Length, "Vectors must have the same dimensionality.");
             Contracts.CheckValue(func, nameof(func));
+            ApplyInto(ref a, ref b, ref dst, new DstProducingPairDelegateVisitor<TSrc1, TSrc2, TDst>(func));
+        }
+#endif
+
+        public static void ApplyInto<TSrc1, TSrc2, TDst, TVisitor>(ref VBuffer<TSrc1> a, ref VBuffer<TSrc2> b, ref VBuffer<TDst> dst, TVisitor visitor) where TVisitor : struct, IDstProducingPairVisitor<TSrc1, TSrc2, TDst>
+        {
+            IntPtr dummyValue = default(IntPtr);
+
+            ApplyInto(ref a, ref b, ref dst, ref dummyValue, new NonContextDstProducingPairVisitor<TSrc1, TSrc2, TDst, TVisitor>(visitor));
+        }
+
+        public static void ApplyInto<TSrc1, TSrc2, TDst, TContext, TVisitor>(ref VBuffer<TSrc1> a, ref VBuffer<TSrc2> b, ref VBuffer<TDst> dst, ref TContext context, TVisitor visitor) where TVisitor : struct, IDstProducingPairVisitor<TSrc1, TSrc2, TDst, TContext>
+        {
+            Contracts.Check(a.Length == b.Length, "Vectors must have the same dimensionality.");
 
             // We handle the following cases:
             // 1. When a and b are both empty, we set the result to empty.
@@ -1807,7 +1767,7 @@ namespace Microsoft.ML.Runtime.Internal.Utilities
                     for (int i = 0; i < b.Length; i++)
                     {
                         TSrc1 aVal = (aI < a.Count && i == a.Indices[aI]) ? a.Values[aI++] : default(TSrc1);
-                        values[i] = func(i, aVal, b.Values[i]);
+                        values[i] = visitor.Visit(i, aVal, b.Values[i], ref context);
                     }
                 }
                 else if (!b.IsDense)
@@ -1816,14 +1776,14 @@ namespace Microsoft.ML.Runtime.Internal.Utilities
                     for (int i = 0; i < a.Length; i++)
                     {
                         TSrc2 bVal = (bI < b.Count && i == b.Indices[bI]) ? b.Values[bI++] : default(TSrc2);
-                        values[i] = func(i, a.Values[i], bVal);
+                        values[i] = visitor.Visit(i, a.Values[i], bVal, ref context);
                     }
                 }
                 else
                 {
                     // both dense
                     for (int i = 0; i < a.Length; i++)
-                        values[i] = func(i, a.Values[i], b.Values[i]);
+                        values[i] = visitor.Visit(i, a.Values[i], b.Values[i], ref context);
                 }
                 dst = new VBuffer<TDst>(a.Length, values, dst.Indices);
                 return;
@@ -1862,7 +1822,7 @@ namespace Microsoft.ML.Runtime.Internal.Utilities
                     for (aI = 0; aI < a.Count; aI++)
                     {
                         Contracts.Assert(a.Indices[aI] == b.Indices[aI]);
-                        values[aI] = func(a.Indices[aI], a.Values[aI], b.Values[aI]);
+                        values[aI] = visitor.Visit(a.Indices[aI], a.Values[aI], b.Values[aI], ref context);
                     }
                 }
                 else
@@ -1874,10 +1834,10 @@ namespace Microsoft.ML.Runtime.Internal.Utilities
                     {
                         Contracts.Assert(a.Indices[aI] >= b.Indices[bI]);
                         TSrc1 aVal = a.Indices[aI] == b.Indices[bI] ? a.Values[aI++] : default(TSrc1);
-                        values[bI] = func(b.Indices[bI], aVal, b.Values[bI]);
+                        values[bI] = visitor.Visit(b.Indices[bI], aVal, b.Values[bI], ref context);
                     }
                     for (; bI < b.Count; bI++)
-                        values[bI] = func(b.Indices[bI], default(TSrc1), b.Values[bI]);
+                        values[bI] = visitor.Visit(b.Indices[bI], default(TSrc1), b.Values[bI], ref context);
                 }
             }
             else if (newCount == a.Count)
@@ -1889,10 +1849,10 @@ namespace Microsoft.ML.Runtime.Internal.Utilities
                 {
                     Contracts.Assert(b.Indices[bI] >= a.Indices[aI]);
                     TSrc2 bVal = a.Indices[aI] == b.Indices[bI] ? b.Values[bI++] : default(TSrc2);
-                    values[aI] = func(a.Indices[aI], a.Values[aI], bVal);
+                    values[aI] = visitor.Visit(a.Indices[aI], a.Values[aI], bVal, ref context);
                 }
                 for (; aI < a.Count; aI++)
-                    values[aI] = func(a.Indices[aI], a.Values[aI], default(TSrc2));
+                    values[aI] = visitor.Visit(a.Indices[aI], a.Values[aI], default(TSrc2), ref context);
             }
             else
             {
@@ -1924,21 +1884,21 @@ namespace Microsoft.ML.Runtime.Internal.Utilities
                         aVal = a.Values[aI++];
                         bVal = b.Values[bI++];
                     }
-                    values[newI] = func(index, aVal, bVal);
+                    values[newI] = visitor.Visit(index, aVal, bVal, ref context);
                     indices[newI++] = index;
                 }
 
                 for (; aI < a.Count; aI++)
                 {
                     int index = a.Indices[aI];
-                    values[newI] = func(index, a.Values[aI], default(TSrc2));
+                    values[newI] = visitor.Visit(index, a.Values[aI], default(TSrc2), ref context);
                     indices[newI++] = index;
                 }
 
                 for (; bI < b.Count; bI++)
                 {
                     int index = b.Indices[bI];
-                    values[newI] = func(index, default(TSrc1), b.Values[bI]);
+                    values[newI] = visitor.Visit(index, default(TSrc1), b.Values[bI], ref context);
                     indices[newI++] = index;
                 }
             }

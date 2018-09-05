@@ -947,7 +947,7 @@ namespace Microsoft.ML.Runtime.Data
             }
         }
 
-        private struct VerifyDvTextIdenticalVisitor : VBufferUtils.IForEachPairShortcuttingVisitor<DvText>
+        private struct VerifyDvTextIdenticalVisitor : VBufferUtils.IPairVisitor<DvText>
         {
             public bool Visit(int index, DvText val1, DvText val2) { return DvText.Identical(val1, val2); }
         }
@@ -969,7 +969,7 @@ namespace Microsoft.ML.Runtime.Data
                     return false;
                 else
                 {
-                    return VBufferUtils.ForEachEitherDefinedShortcutting(ref currSlotNames, ref firstDvSlotNames, new VerifyDvTextIdenticalVisitor());
+                    return VBufferUtils.ForEachEitherDefined(ref currSlotNames, ref firstDvSlotNames, new VerifyDvTextIdenticalVisitor());
                 }
             }
             else

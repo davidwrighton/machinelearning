@@ -119,8 +119,6 @@ namespace Microsoft.ML.Runtime.Api
 
                     var column = DataView._schema.SchemaDefn.Columns[index];
                     var outputType = column.OutputType;
-                    var genericType = outputType;
-                    Func<int, Delegate> del;
 
                     if (outputType.IsArray)
                     {
@@ -187,8 +185,8 @@ namespace Microsoft.ML.Runtime.Api
                             Ch.Assert(Nullable.GetUnderlyingType(outputType.GetElementType()) == colType.ItemType.RawType);
                         else
                             Ch.Assert(outputType.GetElementType() == colType.ItemType.RawType);
-                        del = CreateDirectArrayGetterDelegate<int>;
-                        genericType = outputType.GetElementType();
+
+                        return _createDirectArrayGetterDelegateEntry.GetDelegate(outputType.GetElementType())(this, index);
                     }
                     else if (colType.IsVector)
                     {
@@ -197,8 +195,7 @@ namespace Microsoft.ML.Runtime.Api
                         Ch.Assert(outputType.IsGenericType);
                         Ch.Assert(outputType.GetGenericTypeDefinition() == typeof(VBuffer<>));
                         Ch.Assert(outputType.GetGenericArguments()[0] == colType.ItemType.RawType);
-                        del = CreateDirectVBufferGetterDelegate<int>;
-                        genericType = colType.ItemType.RawType;
+                        return _createDirectVBufferGetterDelegateEntry.GetDelegate(colType.ItemType.RawType)(this, index);
                     }
                     else if (colType.IsPrimitive)
                     {
@@ -273,16 +270,14 @@ namespace Microsoft.ML.Runtime.Api
                             Ch.Assert(colType.RawType == Nullable.GetUnderlyingType(outputType));
                         else
                             Ch.Assert(colType.RawType == outputType);
-                        del = CreateDirectGetterDelegate<int>;
+
+                        return _createDirectGetterDelegateEntry.GetDelegate(outputType)(this, index);
                     }
                     else
                     {
                         // REVIEW: Is this even possible?
                         throw Ch.ExceptNotImpl("Type '{0}' is not yet supported.", outputType.FullName);
                     }
-                    MethodInfo meth =
-                        del.GetMethodInfo().GetGenericMethodDefinition().MakeGenericMethod(genericType);
-                    return (Delegate)meth.Invoke(this, new object[] { index });
                 }
 
                 // REVIEW: The converting getter invokes a type conversion delegate on every call, so it's inherently slower
@@ -317,6 +312,10 @@ namespace Microsoft.ML.Runtime.Api
                     });
                 }
 
+                private static DynamicTypeInvoker<Func<DataViewCursorBase, int, Delegate>> _createDirectArrayGetterDelegateEntry = new DynamicTypeInvoker<Func<DataViewCursorBase, int, Delegate>>(1,
+                    (Type[] types) => { return typeof(DataViewCursorBase).GetMethod(nameof(CreateDirectArrayGetterDelegate), BindingFlags.Instance | BindingFlags.NonPublic).MakeGenericMethod(types[0]); }
+                );
+
                 private Delegate CreateDirectArrayGetterDelegate<TDst>(int index)
                 {
                     var peek = DataView._peeks[index] as Peek<TRow, TDst[]>;
@@ -333,6 +332,10 @@ namespace Microsoft.ML.Runtime.Api
                     });
                 }
 
+                private static DynamicTypeInvoker<Func<DataViewCursorBase, int, Delegate>> _createDirectVBufferGetterDelegateEntry = new DynamicTypeInvoker<Func<DataViewCursorBase, int, Delegate>>(1,
+                    (Type[] types) => { return typeof(DataViewCursorBase).GetMethod(nameof(CreateDirectVBufferGetterDelegate), BindingFlags.Instance | BindingFlags.NonPublic).MakeGenericMethod(types[0]); }
+                );
+
                 private Delegate CreateDirectVBufferGetterDelegate<TDst>(int index)
                 {
                     var peek = DataView._peeks[index] as Peek<TRow, VBuffer<TDst>>;
@@ -347,6 +350,10 @@ namespace Microsoft.ML.Runtime.Api
                         buf.CopyTo(ref dst);
                     });
                 }
+
+                private static DynamicTypeInvoker<Func<DataViewCursorBase, int, Delegate>> _createDirectGetterDelegateEntry = new DynamicTypeInvoker<Func<DataViewCursorBase, int, Delegate>>(1,
+                    (Type[] types) => { return typeof(DataViewCursorBase).GetMethod(nameof(CreateDirectGetterDelegate), BindingFlags.Instance | BindingFlags.NonPublic).MakeGenericMethod(types[0]); }
+                );
 
                 private Delegate CreateDirectGetterDelegate<TDst>(int index)
                 {

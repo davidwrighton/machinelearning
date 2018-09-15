@@ -193,6 +193,10 @@ namespace Microsoft.ML.Runtime.Data
             return getters;
         }
 
+        private static DynamicTypeInvoker<Func<IRow, int, Delegate>> _getGetterEntry = new DynamicTypeInvoker<Func<IRow, int, Delegate>>(1,
+            (Type[] types) => { return typeof(RowToRowScorerBase).GetMethod(nameof(GetGetterFromRowGeneric), BindingFlags.Static | BindingFlags.NonPublic).MakeGenericMethod(types[0]); }
+        );
+
         protected static Delegate GetGetterFromRow(IRow row, int col)
         {
             Contracts.AssertValue(row);
@@ -200,12 +204,10 @@ namespace Microsoft.ML.Runtime.Data
             Contracts.Assert(row.IsColumnActive(col));
 
             var type = row.Schema.GetColumnType(col);
-            Func<IRow, int, ValueGetter<int>> del = GetGetterFromRow<int>;
-            var meth = del.GetMethodInfo().GetGenericMethodDefinition().MakeGenericMethod(type.RawType);
-            return (Delegate)meth.Invoke(null, new object[] { row, col });
+            return _getGetterEntry.GetDelegate(type.RawType)(row, col);
         }
 
-        protected static ValueGetter<T> GetGetterFromRow<T>(IRow output, int col)
+        protected static ValueGetter<T> GetGetterFromRowGeneric<T>(IRow output, int col)
         {
             Contracts.AssertValue(output);
             Contracts.Assert(0 <= col && col < output.Schema.ColumnCount);

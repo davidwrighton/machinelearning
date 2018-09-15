@@ -808,23 +808,26 @@ namespace Microsoft.ML.Runtime.Data
             return input.GetGetter<T>(_bindings.Infos[iinfo].SrcIndices[isrc]);
         }
 
+        private static DynamicTypeInvoker<Func<ConcatTransform, IRow, int, int, Delegate>> _getSrcGetterEntry = new DynamicTypeInvoker<Func<ConcatTransform, IRow, int, int, Delegate>>(1,
+            (Type[] types) => { return typeof(ConcatTransform).GetMethod(nameof(GetSrcGetter), BindingFlags.Instance | BindingFlags.NonPublic).MakeGenericMethod(types[0]); }
+        );
+
+        private static DynamicTypeInvoker<Func<ConcatTransform, IChannel, IRow, int, Delegate>> _getMakeGetterEntry = new DynamicTypeInvoker<Func<ConcatTransform, IChannel, IRow, int, Delegate>>(1,
+            (Type[] types) => { return typeof(ConcatTransform).GetMethod(nameof(MakeGetterGeneric), BindingFlags.Instance | BindingFlags.NonPublic).MakeGenericMethod(types[0]); }
+        );
+
         private Delegate MakeGetter(IChannel ch, IRow input, int iinfo)
         {
             var info = _bindings.Infos[iinfo];
-            MethodInfo meth;
             if (_bindings.EchoSrc[iinfo])
             {
-                Func<IRow, int, int, ValueGetter<int>> srcDel = GetSrcGetter<int>;
-                meth = srcDel.GetMethodInfo().GetGenericMethodDefinition().MakeGenericMethod(info.SrcTypes[0].RawType);
-                return (Delegate)meth.Invoke(this, new object[] { input, iinfo, 0 });
+                return _getSrcGetterEntry.GetDelegate(info.SrcTypes[0].RawType)(this, input, iinfo, 0);
             }
 
-            Func<IChannel, IRow, int, ValueGetter<VBuffer<int>>> del = MakeGetter<int>;
-            meth = del.GetMethodInfo().GetGenericMethodDefinition().MakeGenericMethod(info.SrcTypes[0].ItemType.RawType);
-            return (Delegate)meth.Invoke(this, new object[] { ch, input, iinfo });
+            return _getMakeGetterEntry.GetDelegate(info.SrcTypes[0].RawType)(this, ch, input, iinfo);
         }
 
-        private ValueGetter<VBuffer<T>> MakeGetter<T>(IChannel ch, IRow input, int iinfo)
+        private ValueGetter<VBuffer<T>> MakeGetterGeneric<T>(IChannel ch, IRow input, int iinfo)
         {
             var info = _bindings.Infos[iinfo];
             var srcGetterOnes = new ValueGetter<T>[info.SrcIndices.Length];

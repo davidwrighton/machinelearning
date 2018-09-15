@@ -137,10 +137,12 @@ namespace Microsoft.ML.Runtime.Data
             Contracts.Assert(0 <= colSrc && colSrc < input.Schema.ColumnCount);
 
             var typeSrc = input.Schema.GetColumnType(colSrc);
-            Func<IRow, int, ValueGetter<int>> del = GetValueGetter<int, int>;
-            var meth = del.GetMethodInfo().GetGenericMethodDefinition().MakeGenericMethod(typeSrc.RawType, ScoreType.RawType);
-            return (Delegate)meth.Invoke(this, new object[] { input, colSrc });
+            return _createDirectArrayGetterDelegateEntry.GetDelegate(typeSrc.RawType, ScoreType.RawType)(this, input, colSrc);
         }
+
+        private static DynamicTypeInvoker<Func<SchemaBindablePredictorWrapperBase, IRow, int, Delegate>> _createDirectArrayGetterDelegateEntry = new DynamicTypeInvoker<Func<SchemaBindablePredictorWrapperBase, IRow, int, Delegate>>(2,
+            (Type[] types) => { return typeof(SchemaBindablePredictorWrapperBase).GetMethod(nameof(GetValueGetter), BindingFlags.Instance | BindingFlags.NonPublic).MakeGenericMethod(types[0], types[1]); }
+        );
 
         private ValueGetter<TDst> GetValueGetter<TSrc, TDst>(IRow input, int colSrc)
         {

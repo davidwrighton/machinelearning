@@ -155,37 +155,63 @@ namespace Microsoft.ML.Runtime.Numeric
                 return EvalCore(ref input, ref gradient, ProgressProvider);
             }
 
+            private struct MakeSteepestDescDirEnforceNonNegativityVisitor : VBufferUtils.IDstProducingPairVisitor<float, float, float>
+            {
+                public MakeSteepestDescDirEnforceNonNegativityVisitor(int biasCount, float l1weight)
+                {
+                    _biasCount = biasCount;
+                    _l1weight = l1weight;
+                }
+
+                private readonly float _biasCount;
+                private readonly float _l1weight;
+                public float Visit(int index, float xVal, float gradVal)
+                {
+                    if (index < _biasCount)
+                        return -gradVal;
+                    if (xVal > 0)
+                        return -gradVal - _l1weight;
+                    return -Math.Min(gradVal + _l1weight, 0);
+                }
+            }
+
+            private struct MakeSteepestDescDirVisitor : VBufferUtils.IDstProducingPairVisitor<float, float, float>
+            {
+                public MakeSteepestDescDirVisitor(int biasCount, float l1weight)
+                {
+                    _biasCount = biasCount;
+                    _l1weight = l1weight;
+                }
+
+                private readonly float _biasCount;
+                private readonly float _l1weight;
+                public float Visit(int index, float xVal, float gradVal)
+                {
+                    if (index < _biasCount)
+                        return -gradVal;
+                    if (xVal < 0)
+                        return -gradVal + _l1weight;
+                    if (xVal > 0)
+                        return -gradVal - _l1weight;
+                    if (gradVal < -_l1weight)
+                        return -gradVal - _l1weight;
+                    if (gradVal > _l1weight)
+                        return -gradVal + _l1weight;
+                    return 0;
+                }
+            }
+
             private void MakeSteepestDescDir()
             {
                 if (!EnforceNonNegativity)
                 {
                     VBufferUtils.ApplyInto(ref _x, ref _grad, ref _steepestDescDir,
-                        (ind, xVal, gradVal) =>
-                        {
-                            if (ind < _biasCount)
-                                return -gradVal;
-                            if (xVal < 0)
-                                return -gradVal + _l1weight;
-                            if (xVal > 0)
-                                return -gradVal - _l1weight;
-                            if (gradVal < -_l1weight)
-                                return -gradVal - _l1weight;
-                            if (gradVal > _l1weight)
-                                return -gradVal + _l1weight;
-                            return 0;
-                        });
+                        new MakeSteepestDescDirVisitor(_biasCount, _l1weight));
                 }
                 else
                 {
                     VBufferUtils.ApplyInto(ref _x, ref _grad, ref _steepestDescDir,
-                        (ind, xVal, gradVal) =>
-                        {
-                            if (ind < _biasCount)
-                                return -gradVal;
-                            if (xVal > 0)
-                                return -gradVal - _l1weight;
-                            return -Math.Min(gradVal + _l1weight, 0);
-                        });
+                        new MakeSteepestDescDirEnforceNonNegativityVisitor(_biasCount, _l1weight));
                 }
 
                 _steepestDescDir.CopyTo(ref _dir);

@@ -304,17 +304,21 @@ namespace Microsoft.ML.Runtime.Numeric
                 VBufferUtils.ApplyWithEitherDefined(ref _steepestDescDir, ref _dir, new FixDirZeroManipulator());
             }
 
+            private struct UpdateDirEnforceNonNegativityVisitor : VBufferUtils.IDstProducingPairVisitor<float, float, float>
+            {
+                public float Visit(int index, float xVal, float gradVal)
+                {
+                    if (xVal > 0)
+                        return -gradVal;
+                    return -Math.Min(gradVal, 0);
+                }
+            }
+
             internal virtual void UpdateDir()
             {
                 if (EnforceNonNegativity)
                 {
-                    VBufferUtils.ApplyInto(ref _x, ref _grad, ref _steepestDescDir,
-                        (ind, xVal, gradVal) =>
-                        {
-                            if (xVal > 0)
-                                return -gradVal;
-                            return -Math.Min(gradVal, 0);
-                        });
+                    VBufferUtils.ApplyInto(ref _x, ref _grad, ref _steepestDescDir, new UpdateDirEnforceNonNegativityVisitor());
 
                     _steepestDescDir.CopyTo(ref _dir);
                 }

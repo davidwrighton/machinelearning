@@ -223,6 +223,20 @@ namespace Microsoft.ML.Runtime.Numeric
 
             VBufferUtils.ApplyWithCopy(ref src, ref dst, ref res, new MultipleByConstantAndAccumulate(c));
         }
+        private struct AddMulIntoVisitor : VBufferUtils.IDstProducingPairVisitor<Float, Float, Float>
+        {
+            private readonly float _c;
+
+            public AddMulIntoVisitor(float c)
+            {
+                _c = c;
+            }
+
+            public float Visit(int index, float value, float value2)
+            {
+                return value + _c * value2;
+            }
+        }
 
         /// <summary>
         /// Calculate
@@ -238,7 +252,7 @@ namespace Microsoft.ML.Runtime.Numeric
             else if (a.Count == 0)
                 ScaleInto(ref b, c, ref dst);
             else
-                VBufferUtils.ApplyInto(ref a, ref b, ref dst, (ind, v1, v2) => v1 + c * v2);
+                VBufferUtils.ApplyInto(ref a, ref b, ref dst, new AddMulIntoVisitor(c));
         }
 
         /// <summary>
@@ -365,11 +379,34 @@ namespace Microsoft.ML.Runtime.Numeric
             dst = new VBuffer<Float>(dst.Length, dst.Count + gapCount, values, indices);
         }
 
+        private struct ScaleIntoVisitor : VBufferUtils.IDstProducingVisitor<float, float>
+        {
+            public ScaleIntoVisitor(float c)
+            {
+                _c = c;
+            }
+
+            private readonly float _c;
+
+            public float Visit(int index, float value)
+            {
+                return _c * value;
+            }
+        }
+
+        private struct NegateIntoVisitor : VBufferUtils.IDstProducingVisitor<float, float>
+        {
+            public float Visit(int index, float value)
+            {
+                return -value;
+            }
+        }
+
         /// <summary>
         /// Perform in-place scaling of a vector into another vector as
         /// <c><paramref name="dst"/> = <paramref name="src"/> * <paramref name="c"/></c>.
         /// This is more or less equivalent to performing the same operation with
-        /// <see cref="VBufferUtils.ApplyInto{TSrc1,TSrc2,TDst}"/> except perhaps more efficiently,
+        /// <see cref="VBufferUtils.ApplyInto{TSrc1,TSrc2,TDst,TVisitor}"/> except perhaps more efficiently,
         /// with one exception: if <paramref name="c"/> is 0 and <paramref name="src"/>
         /// is sparse, <paramref name="dst"/> will have a count of zero, instead of the
         /// same count as <paramref name="src"/>.
@@ -395,9 +432,9 @@ namespace Microsoft.ML.Runtime.Numeric
                     dst = new VBuffer<Float>(src.Length, 0, dst.Values, dst.Indices);
             }
             else if (c == -1)
-                VBufferUtils.ApplyIntoEitherDefined(ref src, ref dst, (i, v) => -v);
+                VBufferUtils.ApplyIntoEitherDefined(ref src, ref dst, new NegateIntoVisitor());
             else
-                VBufferUtils.ApplyIntoEitherDefined(ref src, ref dst, (i, v) => c * v);
+                VBufferUtils.ApplyIntoEitherDefined(ref src, ref dst, new ScaleIntoVisitor(c));
         }
 
         public static int ArgMax(ref VBuffer<Float> src)

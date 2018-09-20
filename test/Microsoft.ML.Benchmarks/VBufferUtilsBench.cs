@@ -72,6 +72,30 @@ namespace Microsoft.ML.Benchmarks
                     VBufferUtils.ApplyIntoEitherDefined(ref src, ref dst, (int index, float value) => c * value);
             }
 
+            private struct InplaceAdder : VBufferUtils.IPairManipulator<float, float>
+            {
+                public void Manipulate(int slot, float v1, ref float v2) { v2 += v1; }
+            }
+
+            public static void Add_Generic(ref VBuffer<float> src, ref VBuffer<float> dst)
+            {
+                Contracts.Check(src.Length == dst.Length, "Vectors must have the same dimensionality.");
+
+                if (src.Count == 0)
+                    return;
+
+                VBufferUtils.ApplyWith(ref src, ref dst, new InplaceAdder());
+            }
+
+            public static void Add_Delegate(ref VBuffer<float> src, ref VBuffer<float> dst)
+            {
+                Contracts.Check(src.Length == dst.Length, "Vectors must have the same dimensionality.");
+
+                if (src.Count == 0)
+                    return;
+
+                VBufferUtils.ApplyWith(ref src, ref dst, (int slot, float v1, ref float v2) => { v2 += v1; });
+            }
         }
         public enum VBufferChunkType
         {
@@ -80,7 +104,7 @@ namespace Microsoft.ML.Benchmarks
             Dense
         }
 
-        public static VBuffer<float> CreateDataVBuffer(int lengthDividedBySix, VBufferChunkType chunkType, float initialValue = 1.0f, float increment = 1.5f)
+        public static VBuffer<float> CreateDataVBuffer(int lengthDividedBySix, VBufferChunkType chunkType, float initialValue = 1.0f, float increment = 1.5f, int initialIndexMultipliedBy6 = 0)
         {
 
             int countOfValues = 0;
@@ -91,13 +115,15 @@ namespace Microsoft.ML.Benchmarks
             {
                 case VBufferChunkType.Dense:
                     countOfValues = length;
+                    if (initialIndexMultipliedBy6 != 0)
+                        throw new Exception();
                     break;
                 case VBufferChunkType.SparseEveryOther:
-                    countOfValues = lengthDividedBySix * 3;
+                    countOfValues = (lengthDividedBySix - initialIndexMultipliedBy6) * 3;
                     indexIncrement = 2;
                     break;
                 case VBufferChunkType.SparseEveryThird:
-                    countOfValues = lengthDividedBySix * 2;
+                    countOfValues = (lengthDividedBySix - initialIndexMultipliedBy6) * 2;
                     indexIncrement = 3;
                     break;
             }
@@ -114,11 +140,11 @@ namespace Microsoft.ML.Benchmarks
             if (indexIncrement != 1)
             {
                 indices = new int[countOfValues];
-                int currentIndexValue = 0;
+                int currentIndexValue = initialIndexMultipliedBy6 * 6;
                 for (int iIndex = 0; iIndex < data.Length; iIndex++)
                 {
                     indices[iIndex] = currentIndexValue;
-                    currentValue += indexIncrement;
+                    currentIndexValue += indexIncrement;
                 }
             }
 
@@ -143,6 +169,8 @@ namespace Microsoft.ML.Benchmarks
         private VBuffer<float> _sparseLen5400Count1800 = CreateDataVBuffer(900, VBufferChunkType.SparseEveryThird);
 
         private VBuffer<float> _sparseLen18000Count9000 = CreateDataVBuffer(3000, VBufferChunkType.SparseEveryOther);
+        private VBuffer<float> _sparseLen18000Count9000_2 = CreateDataVBuffer(3000, VBufferChunkType.SparseEveryOther, 2.0f);
+        private VBuffer<float> _sparseLen18000Count3000_StartAt6000 = CreateDataVBuffer(3000, VBufferChunkType.SparseEveryOther, initialIndexMultipliedBy6:1000);
         private VBuffer<float> _sparseLen18000Count6000 = CreateDataVBuffer(3000, VBufferChunkType.SparseEveryThird);
         private VBuffer<float> _sparseLen18000Count18000 = CreateDataVBuffer(3000, VBufferChunkType.Dense);
         private VBuffer<float> _sparseLen18000Count18000_2 = CreateDataVBuffer(3000, VBufferChunkType.Dense, 2.0f);
@@ -210,6 +238,60 @@ namespace Microsoft.ML.Benchmarks
         }
 
         [Benchmark]
+        public void AddMultInto_SparseADenseB_18000_Elems_Generic()
+        {
+            TestApis.AddMultInto_Generic(ref _sparseLen18000Count9000, 4.0f, ref _sparseLen18000Count18000, ref _sparseLen18000Count18000_dst);
+        }
+
+        [Benchmark]
+        public void AddMultInto_DenseASparseB_18000_Elems_Generic()
+        {
+            TestApis.AddMultInto_Generic(ref _sparseLen18000Count18000, 4.0f, ref _sparseLen18000Count9000, ref _sparseLen18000Count18000_dst);
+        }
+
+        [Benchmark]
+        public void AddMultInto_SparseASparseB_SameIndices_18000_Elems_Generic()
+        {
+            TestApis.AddMultInto_Generic(ref _sparseLen18000Count9000, 4.0f, ref _sparseLen18000Count9000_2, ref _sparseLen18000Count18000_dst);
+        }
+
+        [Benchmark]
+        public void AddMultInto_SparseASparseB_ASubsetOfIndicesOfB_18000_Elems_Generic()
+        {
+            TestApis.AddMultInto_Generic(ref _sparseLen18000Count3000_StartAt6000, 4.0f, ref _sparseLen18000Count9000, ref _sparseLen18000Count18000_dst);
+        }
+
+        [Benchmark]
+        public void AddMultInto_SparseASparseB_BSubsetOfIndicesOfA_18000_Elems_Generic()
+        {
+            TestApis.AddMultInto_Generic(ref _sparseLen18000Count9000, 4.0f, ref _sparseLen18000Count3000_StartAt6000, ref _sparseLen18000Count18000_dst);
+        }
+
+        [Benchmark]
+        public void AddMultInto_SparseASparseB_NeitherSubset_18000_Elems_Generic()
+        {
+            TestApis.AddMultInto_Generic(ref _sparseLen18000Count6000, 4.0f, ref _sparseLen18000Count3000_StartAt6000, ref _sparseLen18000Count18000_dst);
+        }
+
+        [Benchmark]
+        public void AddMultInto_SparseASparseB_BSubsetOfIndicesOfA_18000_Elems_Delegate()
+        {
+            TestApis.AddMultInto_Delegate(ref _sparseLen18000Count9000, 4.0f, ref _sparseLen18000Count3000_StartAt6000, ref _sparseLen18000Count18000_dst);
+        }
+
+        [Benchmark]
+        public void AddMultInto_Dense_18_Elems_Delegate()
+        {
+            TestApis.AddMultInto_Delegate(ref _sparseLen18Count18, 4.0f, ref _sparseLen18Count18_2, ref _sparseLen18Count18_dst);
+        }
+
+        [Benchmark]
+        public void AddMultInto_Dense_18000_Elems_Delegate()
+        {
+            TestApis.AddMultInto_Delegate(ref _sparseLen18000Count18000, 4.0f, ref _sparseLen18000Count18000_2, ref _sparseLen18000Count18000_dst);
+        }
+
+        [Benchmark]
         public void ScaleInto_By4_Dense_18_Elems_Delegate()
         {
             TestApis.ScaleInto_Delegate(ref _sparseLen18Count18, 4.0f, ref _result);
@@ -256,15 +338,9 @@ namespace Microsoft.ML.Benchmarks
         }
 
         [Benchmark]
-        public void AddMultInto_Dense_18_Elems_Delegate()
+        public void Add_Dense_18000_Elems_Delegate()
         {
-            TestApis.AddMultInto_Delegate(ref _sparseLen18Count18, 4.0f, ref _sparseLen18Count18_2, ref _sparseLen18Count18_dst);
-        }
-
-        [Benchmark]
-        public void AddMultInto_Dense_18000_Elems_Delegate()
-        {
-            TestApis.AddMultInto_Delegate(ref _sparseLen18000Count18000, 4.0f, ref _sparseLen18000Count18000_2, ref _sparseLen18000Count18000_dst);
+            TestApis.Add_Generic(ref _sparseLen18000Count18000, 4.0f, ref _sparseLen18000Count18000_2, ref _sparseLen18000Count18000_dst);
         }
     }
 }

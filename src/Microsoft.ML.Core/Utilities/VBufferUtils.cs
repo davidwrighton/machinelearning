@@ -1734,9 +1734,9 @@ namespace Microsoft.ML.Runtime.Internal.Utilities
             ApplyInto(ref a, ref b, ref dst, ref dummyValue, new NonContextDstProducingPairVisitor<TSrc1, TSrc2, TDst, TVisitor>(visitor));
         }
 
-        public static void ApplyInto<TSrc1, TSrc2, TDst, TContext, TVisitor>(ref VBuffer<TSrc1> a, ref VBuffer<TSrc2> b, ref VBuffer<TDst> dst, ref TContext context, TVisitor visitor) where TVisitor : struct, IDstProducingPairVisitor<TSrc1, TSrc2, TDst, TContext>
+        public static void ApplyInto<TSrc1, TSrc2, TDst, TContext, TVisitor>(ref VBuffer<TSrc1> aInput, ref VBuffer<TSrc2> bInput, ref VBuffer<TDst> dst, ref TContext context, TVisitor visitor) where TVisitor : struct, IDstProducingPairVisitor<TSrc1, TSrc2, TDst, TContext>
         {
-            Contracts.Check(a.Length == b.Length, "Vectors must have the same dimensionality.");
+            Contracts.Check(aInput.Length == bInput.Length, "Vectors must have the same dimensionality.");
 
             // We handle the following cases:
             // 1. When a and b are both empty, we set the result to empty.
@@ -1748,55 +1748,57 @@ namespace Microsoft.ML.Runtime.Internal.Utilities
             // 4. a's indices are a subset of b's.
             // 5. b's indices are a subset of a's.
             // 6. Neither a nor b's indices are a subset of the other.
+            VBuffer<TSrc1> localA = aInput;
+            VBuffer<TSrc2> localB = bInput;
 
-            if (a.Count == 0 && b.Count == 0)
+            if (localA.Count == 0 && localA.Count == 0)
             {
                 // Case 1. Output will be empty.
-                dst = new VBuffer<TDst>(a.Length, 0, dst.Values, dst.Indices);
+                dst = new VBuffer<TDst>(localA.Length, 0, dst.Values, dst.Indices);
                 return;
             }
 
             int aI = 0;
             int bI = 0;
             TDst[] values = dst.Values;
-            if (a.IsDense || b.IsDense)
+            if (localA.IsDense || localB.IsDense)
             {
                 // Case 2. One of the two inputs is dense. The output will be dense.
-                Utils.EnsureSize(ref values, a.Length, a.Length, keepOld: false);
+                values = Utils.EnsureSize(values, localA.Length, localA.Length, keepOld: false);
 
-                if (!a.IsDense)
+                if (!localA.IsDense)
                 {
                     // a is sparse, b is dense
-                    for (int i = 0; i < b.Length; i++)
+                    for (int i = 0; i < localB.Length; i++)
                     {
-                        TSrc1 aVal = (aI < a.Count && i == a.Indices[aI]) ? a.Values[aI++] : default(TSrc1);
-                        values[i] = visitor.Visit(i, aVal, b.Values[i], ref context);
+                        TSrc1 aVal = (aI < localA.Count && i == localA.Indices[aI]) ? localA.Values[aI++] : default(TSrc1);
+                        values[i] = visitor.Visit(i, aVal, localB.Values[i], ref context);
                     }
                 }
-                else if (!b.IsDense)
+                else if (!localB.IsDense)
                 {
                     // b is sparse, a is dense
-                    for (int i = 0; i < a.Length; i++)
+                    for (int i = 0; i < localA.Length; i++)
                     {
-                        TSrc2 bVal = (bI < b.Count && i == b.Indices[bI]) ? b.Values[bI++] : default(TSrc2);
-                        values[i] = visitor.Visit(i, a.Values[i], bVal, ref context);
+                        TSrc2 bVal = (bI < localB.Count && i == localB.Indices[bI]) ? localB.Values[bI++] : default(TSrc2);
+                        values[i] = visitor.Visit(i, localA.Values[i], bVal, ref context);
                     }
                 }
                 else
                 {
                     // both dense
-                    for (int i = 0; i < a.Length; i++)
-                        values[i] = visitor.Visit(i, a.Values[i], b.Values[i], ref context);
+                    for (int i = 0; i < localA.Length; i++)
+                        values[i] = visitor.Visit(i, localA.Values[i], localB.Values[i], ref context);
                 }
-                dst = new VBuffer<TDst>(a.Length, values, dst.Indices);
+                dst = new VBuffer<TDst>(localA.Length, values, dst.Indices);
                 return;
             }
 
             // a, b both sparse.
             int newCount = 0;
-            while (aI < a.Count && bI < b.Count)
+            while (aI < localA.Count && bI < localB.Count)
             {
-                int aCompB = a.Indices[aI] - b.Indices[bI];
+                int aCompB = localA.Indices[aI] - localB.Indices[bI];
                 if (aCompB <= 0) // a is no larger than b.
                     aI++;
                 if (aCompB >= 0) // b is no larger than a.
@@ -1804,58 +1806,58 @@ namespace Microsoft.ML.Runtime.Internal.Utilities
                 newCount++;
             }
 
-            if (aI < a.Count)
-                newCount += a.Count - aI;
-            if (bI < b.Count)
-                newCount += b.Count - bI;
+            if (aI < localA.Count)
+                newCount += localA.Count - aI;
+            if (bI < localB.Count)
+                newCount += localB.Count - bI;
 
             // REVIEW: Worth optimizing the newCount == a.Length case?
             // Probably not...
 
             int[] indices = dst.Indices;
-            Utils.EnsureSize(ref indices, newCount, a.Length, keepOld: false);
-            Utils.EnsureSize(ref values, newCount, a.Length, keepOld: false);
+            indices = Utils.EnsureSize(indices, newCount, localA.Length, keepOld: false);
+            values = Utils.EnsureSize(values, newCount, localA.Length, keepOld: false);
 
-            if (newCount == b.Count)
+            if (newCount == localB.Count)
             {
-                if (newCount == a.Count)
+                if (newCount == localA.Count)
                 {
                     // Case 3, a and b actually have the same indices!
-                    Array.Copy(a.Indices, indices, a.Count);
-                    for (aI = 0; aI < a.Count; aI++)
+                    Array.Copy(localA.Indices, indices, localA.Count);
+                    for (aI = 0; aI < localA.Count; aI++)
                     {
-                        Contracts.Assert(a.Indices[aI] == b.Indices[aI]);
-                        values[aI] = visitor.Visit(a.Indices[aI], a.Values[aI], b.Values[aI], ref context);
+                        Contracts.Assert(localA.Indices[aI] == localB.Indices[aI]);
+                        values[aI] = visitor.Visit(localA.Indices[aI], localA.Values[aI], localB.Values[aI], ref context);
                     }
                 }
                 else
                 {
                     // Case 4, a's indices are a subset of b's.
-                    Array.Copy(b.Indices, indices, b.Count);
+                    Array.Copy(localB.Indices, indices, localB.Count);
                     aI = 0;
-                    for (bI = 0; aI < a.Count && bI < b.Count; bI++)
+                    for (bI = 0; aI < localA.Count && bI < localB.Count; bI++)
                     {
-                        Contracts.Assert(a.Indices[aI] >= b.Indices[bI]);
-                        TSrc1 aVal = a.Indices[aI] == b.Indices[bI] ? a.Values[aI++] : default(TSrc1);
-                        values[bI] = visitor.Visit(b.Indices[bI], aVal, b.Values[bI], ref context);
+                        Contracts.Assert(localA.Indices[aI] >= localB.Indices[bI]);
+                        TSrc1 aVal = localA.Indices[aI] == localB.Indices[bI] ? localA.Values[aI++] : default(TSrc1);
+                        values[bI] = visitor.Visit(localB.Indices[bI], aVal, localB.Values[bI], ref context);
                     }
-                    for (; bI < b.Count; bI++)
-                        values[bI] = visitor.Visit(b.Indices[bI], default(TSrc1), b.Values[bI], ref context);
+                    for (; bI < localB.Count; bI++)
+                        values[bI] = visitor.Visit(localB.Indices[bI], default(TSrc1), localB.Values[bI], ref context);
                 }
             }
-            else if (newCount == a.Count)
+            else if (newCount == localA.Count)
             {
                 // Case 5, b's indices are a subset of a's.
-                Array.Copy(a.Indices, indices, a.Count);
+                Array.Copy(localA.Indices, indices, localA.Count);
                 bI = 0;
-                for (aI = 0; bI < b.Count && aI < a.Count; aI++)
+                for (aI = 0; bI < localB.Count && aI < localA.Count; aI++)
                 {
-                    Contracts.Assert(b.Indices[bI] >= a.Indices[aI]);
-                    TSrc2 bVal = a.Indices[aI] == b.Indices[bI] ? b.Values[bI++] : default(TSrc2);
-                    values[aI] = visitor.Visit(a.Indices[aI], a.Values[aI], bVal, ref context);
+                    Contracts.Assert(localB.Indices[bI] >= localA.Indices[aI]);
+                    TSrc2 bVal = localA.Indices[aI] == localB.Indices[bI] ? localB.Values[bI++] : default(TSrc2);
+                    values[aI] = visitor.Visit(localA.Indices[aI], localA.Values[aI], bVal, ref context);
                 }
-                for (; aI < a.Count; aI++)
-                    values[aI] = visitor.Visit(a.Indices[aI], a.Values[aI], default(TSrc2), ref context);
+                for (; aI < localA.Count; aI++)
+                    values[aI] = visitor.Visit(localA.Indices[aI], localA.Values[aI], default(TSrc2), ref context);
             }
             else
             {
@@ -1863,49 +1865,49 @@ namespace Microsoft.ML.Runtime.Internal.Utilities
                 int newI = aI = bI = 0;
                 TSrc1 aVal = default(TSrc1);
                 TSrc2 bVal = default(TSrc2);
-                while (aI < a.Count && bI < b.Count)
+                while (aI < localA.Count && bI < localB.Count)
                 {
-                    int aCompB = a.Indices[aI] - b.Indices[bI];
+                    int aCompB = localA.Indices[aI] - localB.Indices[bI];
                     int index = 0;
 
                     if (aCompB < 0)
                     {
-                        index = a.Indices[aI];
-                        aVal = a.Values[aI++];
+                        index = localA.Indices[aI];
+                        aVal = localA.Values[aI++];
                         bVal = default(TSrc2);
                     }
                     else if (aCompB > 0)
                     {
-                        index = b.Indices[bI];
+                        index = localB.Indices[bI];
                         aVal = default(TSrc1);
-                        bVal = b.Values[bI++];
+                        bVal = localB.Values[bI++];
                     }
                     else
                     {
-                        index = a.Indices[aI];
-                        Contracts.Assert(index == b.Indices[bI]);
-                        aVal = a.Values[aI++];
-                        bVal = b.Values[bI++];
+                        index = localA.Indices[aI];
+                        Contracts.Assert(index == localB.Indices[bI]);
+                        aVal = localA.Values[aI++];
+                        bVal = localB.Values[bI++];
                     }
                     values[newI] = visitor.Visit(index, aVal, bVal, ref context);
                     indices[newI++] = index;
                 }
 
-                for (; aI < a.Count; aI++)
+                for (; aI < localA.Count; aI++)
                 {
-                    int index = a.Indices[aI];
-                    values[newI] = visitor.Visit(index, a.Values[aI], default(TSrc2), ref context);
+                    int index = localA.Indices[aI];
+                    values[newI] = visitor.Visit(index, localA.Values[aI], default(TSrc2), ref context);
                     indices[newI++] = index;
                 }
 
-                for (; bI < b.Count; bI++)
+                for (; bI < localB.Count; bI++)
                 {
-                    int index = b.Indices[bI];
-                    values[newI] = visitor.Visit(index, default(TSrc1), b.Values[bI], ref context);
+                    int index = localB.Indices[bI];
+                    values[newI] = visitor.Visit(index, default(TSrc1), localB.Values[bI], ref context);
                     indices[newI++] = index;
                 }
             }
-            dst = new VBuffer<TDst>(a.Length, newCount, values, indices);
+            dst = new VBuffer<TDst>(localA.Length, newCount, values, indices);
         }
 
         /// <summary>

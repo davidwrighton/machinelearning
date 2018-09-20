@@ -1643,29 +1643,32 @@ namespace Microsoft.ML.Runtime.Internal.Utilities
 
         public static void ApplyIntoEitherDefined<TSrc, TDst, TContext, TVisitor>(ref VBuffer<TSrc> src, ref VBuffer<TDst> dst, ref TContext context, TVisitor visitor) where TVisitor : struct, IDstProducingVisitor<TSrc, TDst, TContext>
         {
+            VBuffer<TSrc> localSrc = src;
+            int[] indices = dst.Indices;
+
             // REVIEW: The analogous WritableVector method insisted on
             // equal lengths, but I don't care here.
-            if (src.Count == 0)
+            if (localSrc.Count == 0)
             {
-                dst = new VBuffer<TDst>(src.Length, src.Count, dst.Values, dst.Indices);
+                dst = new VBuffer<TDst>(localSrc.Length, localSrc.Count, dst.Values, indices);
                 return;
             }
-            int[] indices = dst.Indices;
-            TDst[] values = dst.Values;
-            Utils.EnsureSize(ref values, src.Count, src.Length, keepOld: false);
-            if (src.IsDense)
+
+            TDst[] values = Utils.EnsureSize(dst.Values, localSrc.Count, localSrc.Length, keepOld: false);
+            TSrc[] valuesSrc = localSrc.Values;
+            if (localSrc.IsDense)
             {
-                for (int i = 0; i < src.Length; ++i)
-                    values[i] = visitor.Visit(i, src.Values[i], ref context);
+                for (int i = 0; i < localSrc.Length; ++i)
+                    values[i] = visitor.Visit(i, valuesSrc[i], ref context);
             }
             else
             {
-                Utils.EnsureSize(ref indices, src.Count, src.Length, keepOld: false);
-                Array.Copy(src.Indices, indices, src.Count);
-                for (int i = 0; i < src.Count; ++i)
-                    values[i] = visitor.Visit(src.Indices[i], src.Values[i], ref context);
+                indices = Utils.EnsureSize(indices, localSrc.Count, localSrc.Length, keepOld: false);
+                Array.Copy(localSrc.Indices, indices, localSrc.Count);
+                for (int i = 0; i < localSrc.Count; ++i)
+                    values[i] = visitor.Visit(indices[i], valuesSrc[i], ref context);
             }
-            dst = new VBuffer<TDst>(src.Length, src.Count, values, indices);
+            dst = new VBuffer<TDst>(localSrc.Length, localSrc.Count, values, indices);
         }
 
         public interface IDstProducingPairVisitor<TSrc1, TSrc2, TDst>

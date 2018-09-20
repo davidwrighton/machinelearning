@@ -866,6 +866,36 @@ namespace Microsoft.ML.Runtime.Internal.Utilities
         }
 
         /// <summary>
+        /// Resizes the array if necessary, to ensure that it has at least <paramref name="min"/> and at most <paramref name="max"/> elements.
+        /// </summary>
+        /// <param name="array">The array to resize. Can be null.</param>
+        /// <param name="min">The minimum number of items the new array must have.</param>
+        /// <param name="max">The maximum number of items the new array can have.</param>
+        /// <param name="keepOld">True means that the old array is preserved, if possible (Array.Resize is called). False
+        /// means that a new array will be allocated.
+        /// </param>
+        /// <returns>The new size, that is no less than <paramref name="min"/> and no more that <paramref name="max"/>.</returns>
+        public static T[] EnsureSize<T>(T[] array, int min, int max, bool keepOld = true)
+        {
+            Contracts.CheckParam(min <= max, nameof(max), "min must not exceed max");
+            // This code adapted from the private method EnsureCapacity code of List<T>.
+            int size = Utils.Size(array);
+            if (size >= min)
+                return array;
+            int newSize = size == 0 ? 4 : size * 2;
+            // This constant taken from the internal code of system\array.cs of mscorlib.
+            if ((uint)newSize > max)
+                newSize = max;
+            if (newSize < min)
+                newSize = min;
+            if (keepOld && size > 0)
+                Array.Resize(ref array, newSize);
+            else
+                array = new T[newSize];
+            return array;
+        }
+
+        /// <summary>
         /// Returns the number of set bits in a bit array.
         /// </summary>
         public static int GetCardinality(BitArray bitArray)

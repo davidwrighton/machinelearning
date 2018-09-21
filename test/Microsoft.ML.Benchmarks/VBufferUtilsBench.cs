@@ -338,9 +338,55 @@ namespace Microsoft.ML.Benchmarks
         }
 
         [Benchmark]
+        public void Add_Dense_18000_Elems_CpuMath()
+        {
+            Microsoft.ML.Runtime.Internal.CpuMath.CpuMathUtils.Add(_sparseLen18000Count18000.Values, _sparseLen18000Count18000.Values, _sparseLen18000Count18000.Length);
+        }
+
+        [Benchmark]
+        public void Add_Dense_18000_Elems_Generic()
+        {
+            TestApis.Add_Generic(ref _sparseLen18000Count18000, ref _sparseLen18000Count18000_dst);
+        }
+
+        [Benchmark]
         public void Add_Dense_18000_Elems_Delegate()
         {
-            TestApis.Add_Generic(ref _sparseLen18000Count18000, 4.0f, ref _sparseLen18000Count18000_2, ref _sparseLen18000Count18000_dst);
+            TestApis.Add_Delegate(ref _sparseLen18000Count18000, ref _sparseLen18000Count18000_dst);
+        }
+
+        [Benchmark]
+        public void Add_SrcEmptyDstDense_18000_Elems_Generic()
+        {
+            VBuffer<float> src = new VBuffer<float>(18000, 0, Array.Empty<float>(), Array.Empty<int>());
+            TestApis.Add_Generic(ref src, ref _sparseLen18000Count18000_dst);
+        }
+
+        [Benchmark]
+        public void Add_SrcEmptyDstSparse_18000_Elems_Generic()
+        {
+            VBuffer<float> src = new VBuffer<float>(18000, 0, Array.Empty<float>(), Array.Empty<int>());
+            TestApis.Add_Generic(ref src, ref _sparseLen18000Count9000);
+        }
+
+        [Benchmark]
+        public void Add_SrcDenseDstSparse_18000_Elems_Generic()
+        {
+            VBuffer<float> dst = _sparseLen18000Count9000;
+            TestApis.Add_Generic(ref _sparseLen18000Count18000, ref dst);
+        }
+
+        [Benchmark]
+        public void Add_SrcSparseDstDense_18000_Elems_Generic()
+        {
+            TestApis.Add_Generic(ref _sparseLen18000Count9000, ref _sparseLen18000Count18000_dst);
+        }
+
+        [Benchmark]
+        public void Add_SrcSparseDstEmpty_18000_Elems_Generic()
+        {
+            VBuffer<float> dst = new VBuffer<float>(0, 0, _sparseLen18000Count18000_dst.Values, _sparseLen18000Count18000_dst.Indices);
+            TestApis.Add_Generic(ref _sparseLen18000Count9000, ref dst);
         }
     }
 }

@@ -1099,104 +1099,106 @@ namespace Microsoft.ML.Runtime.Internal.Utilities
             // Case 5 does not require special handling, because it falls through to other cases
             // that do the special handling for them.
 
-            if (src.Count == 0)
+            VBuffer<TSrc> localSrc = src;
+            VBuffer<TDst> localDst = dst;
+            if (localSrc.Count == 0)
             {
                 // Major case 1, with src.Count == 0.
                 if (!outer.Value)
                     return;
-                if (dst.IsDense)
+                if (localDst.IsDense)
                 {
-                    for (int i = 0; i < dst.Length; i++)
-                        manip.Manipulate(i, default(TSrc), ref dst.Values[i]);
+                    for (int i = 0; i < localDst.Length; i++)
+                        manip.Manipulate(i, default(TSrc), ref localDst.Values[i]);
                 }
                 else
                 {
-                    for (int i = 0; i < dst.Count; i++)
-                        manip.Manipulate(dst.Indices[i], default(TSrc), ref dst.Values[i]);
+                    for (int i = 0; i < localDst.Count; i++)
+                        manip.Manipulate(localDst.Indices[i], default(TSrc), ref localDst.Values[i]);
                 }
                 return;
             }
 
-            if (src.IsDense)
+            if (localSrc.IsDense)
             {
                 // Major case 2, with src.Dense.
-                if (!dst.IsDense)
-                    Densify(ref dst);
+                if (!localDst.IsDense)
+                    Densify(ref localDst);
                 // Both are now dense. Both cases of outer are covered.
-                for (int i = 0; i < src.Length; i++)
-                    manip.Manipulate(i, src.Values[i], ref dst.Values[i]);
+                for (int i = 0; i < localSrc.Length; i++)
+                    manip.Manipulate(i, localSrc.Values[i], ref localDst.Values[i]);
                 return;
             }
 
-            if (dst.IsDense)
+            if (localDst.IsDense)
             {
                 // Major case 3, with dst.Dense. Note that !a.Dense.
                 if (outer.Value)
                 {
                     int sI = 0;
-                    int sIndex = src.Indices[sI];
-                    for (int i = 0; i < dst.Length; ++i)
+                    int sIndex = localSrc.Indices[sI];
+                    for (int i = 0; i < localDst.Length; ++i)
                     {
                         if (i == sIndex)
                         {
-                            manip.Manipulate(i, src.Values[sI], ref dst.Values[i]);
-                            sIndex = ++sI == src.Count ? src.Length : src.Indices[sI];
+                            manip.Manipulate(i, localSrc.Values[sI], ref localDst.Values[i]);
+                            sIndex = ++sI == localSrc.Count ? localSrc.Length : localSrc.Indices[sI];
                         }
                         else
-                            manip.Manipulate(i, default(TSrc), ref dst.Values[i]);
+                            manip.Manipulate(i, default(TSrc), ref localDst.Values[i]);
                     }
                 }
                 else
                 {
-                    for (int i = 0; i < src.Count; i++)
-                        manip.Manipulate(src.Indices[i], src.Values[i], ref dst.Values[src.Indices[i]]);
+                    for (int i = 0; i < localSrc.Count; i++)
+                        manip.Manipulate(localSrc.Indices[i], localSrc.Values[i], ref localDst.Values[localSrc.Indices[i]]);
                 }
                 return;
             }
 
-            if (dst.Count == 0)
+            if (localDst.Count == 0)
             {
                 // Major case 4, with dst empty. Note that !src.Dense.
                 // Neither is dense, and dst is empty. Both cases of outer are covered.
-                var values = dst.Values;
-                var indices = dst.Indices;
-                Utils.EnsureSize(ref values, src.Count, src.Length);
-                Array.Clear(values, 0, src.Count);
-                Utils.EnsureSize(ref indices, src.Count, src.Length);
-                for (int i = 0; i < src.Count; i++)
-                    manip.Manipulate(indices[i] = src.Indices[i], src.Values[i], ref values[i]);
-                dst = new VBuffer<TDst>(src.Length, src.Count, values, indices);
+                var values = localDst.Values;
+                var indices = localDst.Indices;
+                values = Utils.EnsureSize(values, localSrc.Count, localSrc.Length);
+                Array.Clear(values, 0, localSrc.Count);
+                indices = Utils.EnsureSize(indices, localSrc.Count, localSrc.Length);
+                for (int i = 0; i < localSrc.Count; i++)
+                    manip.Manipulate(indices[i] = localSrc.Indices[i], localSrc.Values[i], ref values[i]);
+                localDst = new VBuffer<TDst>(localSrc.Length, localSrc.Count, values, indices);
                 return;
             }
 
             // Beyond this point, we can assume both a and b are sparse with positive count.
             int dI = 0;
-            int newCount = dst.Count;
+            int newCount = localDst.Count;
             // Try to find each src index in dst indices, counting how many more we'll add.
-            for (int sI = 0; sI < src.Count; sI++)
+            for (int sI = 0; sI < localSrc.Count; sI++)
             {
-                int sIndex = src.Indices[sI];
-                while (dI < dst.Count && dst.Indices[dI] < sIndex)
+                int sIndex = localSrc.Indices[sI];
+                while (dI < localDst.Count && localDst.Indices[dI] < sIndex)
                     dI++;
-                if (dI == dst.Count)
+                if (dI == localDst.Count)
                 {
-                    newCount += src.Count - sI;
+                    newCount += localSrc.Count - sI;
                     break;
                 }
-                if (dst.Indices[dI] == sIndex)
+                if (localDst.Indices[dI] == sIndex)
                     dI++;
                 else
                     newCount++;
             }
             Contracts.Assert(newCount > 0);
-            Contracts.Assert(0 < src.Count && src.Count <= newCount);
-            Contracts.Assert(0 < dst.Count && dst.Count <= newCount);
+            Contracts.Assert(0 < localSrc.Count && localSrc.Count <= newCount);
+            Contracts.Assert(0 < localDst.Count && localDst.Count <= newCount);
 
             // REVIEW: Densify above a certain threshold, not just if
             // the output will necessarily become dense? But then we get into
             // the dubious business of trying to pick the "right" densification
             // threshold.
-            if (newCount == dst.Length)
+            if (newCount == localDst.Length)
             {
                 // Major case 5, dst will become dense through the application of
                 // this. Just recurse one level so one of the initial conditions
@@ -1209,21 +1211,21 @@ namespace Microsoft.ML.Runtime.Internal.Utilities
                 return;
             }
 
-            if (newCount != src.Count && newCount != dst.Count)
+            if (newCount != localSrc.Count && newCount != localDst.Count)
             {
                 // Major case 6, neither set of indices is a subset of the other.
                 // This subcase used to fall through to another subcase, but this
                 // proved to be inefficient so we go to the little bit of extra work
                 // to handle it here.
 
-                var indices = dst.Indices;
-                var values = dst.Values;
-                Utils.EnsureSize(ref indices, newCount, dst.Length, keepOld: false);
-                Utils.EnsureSize(ref values, newCount, dst.Length, keepOld: false);
-                int sI = src.Count - 1;
-                dI = dst.Count - 1;
-                int sIndex = src.Indices[sI];
-                int dIndex = dst.Indices[dI];
+                var indices = localDst.Indices;
+                var values = localDst.Values;
+                indices = Utils.EnsureSize(indices, newCount, localDst.Length, keepOld: false);
+                values = Utils.EnsureSize(values, newCount, localDst.Length, keepOld: false);
+                int sI = localSrc.Count - 1;
+                dI = localDst.Count - 1;
+                int sIndex = localSrc.Indices[sI];
+                int dIndex = localDst.Indices[dI];
 
                 // Go from the end, so that even if we're writing over dst's vectors in
                 // place, we do not corrupt the data as we are reorganizing it.
@@ -1232,17 +1234,17 @@ namespace Microsoft.ML.Runtime.Internal.Utilities
                     if (sIndex < dIndex)
                     {
                         indices[i] = dIndex;
-                        values[i] = dst.Values[dI];
+                        values[i] = localDst.Values[dI];
                         if (outer.Value)
                             manip.Manipulate(dIndex, default(TSrc), ref values[i]);
-                        dIndex = --dI >= 0 ? dst.Indices[dI] : -1;
+                        dIndex = --dI >= 0 ? localDst.Indices[dI] : -1;
                     }
                     else if (sIndex > dIndex)
                     {
                         indices[i] = sIndex;
                         values[i] = default(TDst);
-                        manip.Manipulate(sIndex, src.Values[sI], ref values[i]);
-                        sIndex = --sI >= 0 ? src.Indices[sI] : -1;
+                        manip.Manipulate(sIndex, localSrc.Values[sI], ref values[i]);
+                        sIndex = --sI >= 0 ? localSrc.Indices[sI] : -1;
                     }
                     else
                     {
@@ -1250,84 +1252,84 @@ namespace Microsoft.ML.Runtime.Internal.Utilities
                         Contracts.Assert(sIndex >= 0);
                         Contracts.Assert(sIndex == dIndex);
                         indices[i] = dIndex;
-                        values[i] = dst.Values[dI];
-                        manip.Manipulate(sIndex, src.Values[sI], ref values[i]);
-                        sIndex = --sI >= 0 ? src.Indices[sI] : -1;
-                        dIndex = --dI >= 0 ? dst.Indices[dI] : -1;
+                        values[i] = localDst.Values[dI];
+                        manip.Manipulate(sIndex, localSrc.Values[sI], ref values[i]);
+                        sIndex = --sI >= 0 ? localSrc.Indices[sI] : -1;
+                        dIndex = --dI >= 0 ? localDst.Indices[dI] : -1;
                     }
                 }
-                dst = new VBuffer<TDst>(dst.Length, newCount, values, indices);
+                localDst = new VBuffer<TDst>(localDst.Length, newCount, values, indices);
                 return;
             }
 
-            if (newCount == dst.Count)
+            if (newCount == localDst.Count)
             {
-                if (newCount == src.Count)
+                if (newCount == localSrc.Count)
                 {
                     // Major case 7, the set of indices is the same for src and dst.
-                    Contracts.Assert(src.Count == dst.Count);
-                    for (int i = 0; i < src.Count; i++)
+                    Contracts.Assert(localSrc.Count == localDst.Count);
+                    for (int i = 0; i < localSrc.Count; i++)
                     {
-                        Contracts.Assert(src.Indices[i] == dst.Indices[i]);
-                        manip.Manipulate(src.Indices[i], src.Values[i], ref dst.Values[i]);
+                        Contracts.Assert(localSrc.Indices[i] == localDst.Indices[i]);
+                        manip.Manipulate(localSrc.Indices[i], localSrc.Values[i], ref localDst.Values[i]);
                     }
                     return;
                 }
                 // Major case 8, the indices of src must be a subset of dst's indices.
-                Contracts.Assert(newCount > src.Count);
+                Contracts.Assert(newCount > localSrc.Count);
                 dI = 0;
                 if (outer.Value)
                 {
                     int sI = 0;
-                    int sIndex = src.Indices[sI];
-                    for (int i = 0; i < dst.Count; ++i)
+                    int sIndex = localSrc.Indices[sI];
+                    for (int i = 0; i < localDst.Count; ++i)
                     {
-                        if (dst.Indices[i] == sIndex)
+                        if (localDst.Indices[i] == sIndex)
                         {
-                            manip.Manipulate(sIndex, src.Values[sI], ref dst.Values[i]);
-                            sIndex = ++sI == src.Count ? src.Length : src.Indices[sI];
+                            manip.Manipulate(sIndex, localSrc.Values[sI], ref localDst.Values[i]);
+                            sIndex = ++sI == localSrc.Count ? localSrc.Length : localSrc.Indices[sI];
                         }
                         else
-                            manip.Manipulate(dst.Indices[i], default(TSrc), ref dst.Values[i]);
+                            manip.Manipulate(localDst.Indices[i], default(TSrc), ref localDst.Values[i]);
                     }
                 }
                 else
                 {
-                    for (int sI = 0; sI < src.Count; sI++)
+                    for (int sI = 0; sI < localSrc.Count; sI++)
                     {
-                        int sIndex = src.Indices[sI];
-                        while (dst.Indices[dI] < sIndex)
+                        int sIndex = localSrc.Indices[sI];
+                        while (localDst.Indices[dI] < sIndex)
                             dI++;
-                        Contracts.Assert(dst.Indices[dI] == sIndex);
-                        manip.Manipulate(sIndex, src.Values[sI], ref dst.Values[dI++]);
+                        Contracts.Assert(localDst.Indices[dI] == sIndex);
+                        manip.Manipulate(sIndex, localSrc.Values[sI], ref localDst.Values[dI++]);
                     }
                 }
                 return;
             }
 
-            if (newCount == src.Count)
+            if (newCount == localSrc.Count)
             {
                 // Major case 9, the indices of dst must be a subset of src's indices. Both cases of outer are covered.
 
                 // First do a "quasi" densification of dst, by making the indices
                 // of dst correspond to those in src.
                 int sI = 0;
-                for (dI = 0; dI < dst.Count; ++dI)
+                for (dI = 0; dI < localDst.Count; ++dI)
                 {
-                    int bIndex = dst.Indices[dI];
-                    while (src.Indices[sI] < bIndex)
+                    int bIndex = localDst.Indices[dI];
+                    while (localSrc.Indices[sI] < bIndex)
                         sI++;
-                    Contracts.Assert(src.Indices[sI] == bIndex);
-                    dst.Indices[dI] = sI++;
+                    Contracts.Assert(localSrc.Indices[sI] == bIndex);
+                    localDst.Indices[dI] = sI++;
                 }
-                dst = new VBuffer<TDst>(newCount, dst.Count, dst.Values, dst.Indices);
-                Densify(ref dst);
-                int[] indices = dst.Indices;
-                Utils.EnsureSize(ref indices, src.Count, src.Length, keepOld: false);
-                Array.Copy(src.Indices, indices, newCount);
-                dst = new VBuffer<TDst>(src.Length, newCount, dst.Values, indices);
-                for (sI = 0; sI < src.Count; sI++)
-                    manip.Manipulate(src.Indices[sI], src.Values[sI], ref dst.Values[sI]);
+                localDst = new VBuffer<TDst>(newCount, localDst.Count, localDst.Values, localDst.Indices);
+                Densify(ref localDst);
+                int[] indices = localDst.Indices;
+                indices = Utils.EnsureSize(indices, localSrc.Count, localSrc.Length, keepOld: false);
+                Array.Copy(localSrc.Indices, indices, newCount);
+                localDst = new VBuffer<TDst>(localSrc.Length, newCount, localDst.Values, indices);
+                for (sI = 0; sI < localSrc.Count; sI++)
+                    manip.Manipulate(localSrc.Indices[sI], localSrc.Values[sI], ref localDst.Values[sI]);
                 return;
             }
 
